@@ -11,7 +11,7 @@
     "start": "node build/index.js",
     "dev": "ts-node --esm src/index.ts",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
-    "lint": "eslint . --ext .ts",
+    "lint": "eslint ./src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\""
   },
