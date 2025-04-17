@@ -7,19 +7,21 @@
     "nextcloud-calendar": "./build/index.js"
   },
   "scripts": {
-    "build": "tsc && chmod 755 build/index.js",
+    "build": "tsc --skipLibCheck && chmod 755 build/index.js",
     "start": "node build/index.js",
     "dev": "ts-node --esm src/index.ts",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "lint": "eslint ./src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit --skipLibCheck",
     "prepare": "husky"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
       "prettier --write",
-      "eslint --fix"
+      "eslint --fix",
+      "tsc --noEmit --skipLibCheck"
     ]
   },
   "keywords": [
