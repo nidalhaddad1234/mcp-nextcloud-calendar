@@ -402,6 +402,34 @@ function isValidFrequency(
 }
 
 /**
+ * Validates if a value is a valid hex color code
+ */
+function isValidHexColor(color: unknown): boolean {
+  if (typeof color !== 'string') return false;
+  return /^#([0-9A-F]{3}){1,2}$/i.test(color);
+}
+
+/**
+ * Validates and normalizes a focus priority value (1-10)
+ */
+function validateFocusPriority(priority: unknown): number | undefined {
+  if (priority === null || priority === undefined) return undefined;
+  const num = Number(priority);
+  if (isNaN(num)) return undefined;
+  return Math.min(Math.max(1, Math.round(num)), 10);
+}
+
+/**
+ * Validates and normalizes an energy level value (1-5)
+ */
+function validateEnergyLevel(level: unknown): number | undefined {
+  if (level === null || level === undefined) return undefined;
+  const num = Number(level);
+  if (isNaN(num)) return undefined;
+  return Math.min(Math.max(1, Math.round(num)), 5);
+}
+
+/**
  * Safely parses a date string, returning undefined if invalid
  */
 function safelyParseDate(dateString: unknown): Date | undefined {
@@ -412,6 +440,11 @@ function safelyParseDate(dateString: unknown): Date | undefined {
     if (typeof dateString === 'string') {
       const date = new Date(dateString);
       // Check if date is valid
+      if (isNaN(date.getTime())) return undefined;
+      return date;
+    }
+    if (typeof dateString === 'number') {
+      const date = new Date(dateString);
       if (isNaN(date.getTime())) return undefined;
       return date;
     }
@@ -447,10 +480,16 @@ export const CalendarUtils = {
     // Extract permissions with proper fallbacks
     const permissionsData = (data.permissions as JSONObject) || {};
 
+    // Validate color
+    const color = (data.color as string) || '#0082c9';
+    if (!isValidHexColor(color)) {
+      console.warn(`Invalid color format: ${color}, defaulting to #0082c9`);
+    }
+
     return {
       id: data.id as string,
       displayName,
-      color: (data.color as string) || '#0082c9',
+      color: isValidHexColor(color) ? color : '#0082c9',
       owner: (data.owner as string) || '',
       isDefault: Boolean(data.isDefault || data.is_default),
       isShared: Boolean(data.isShared || data.is_shared),
@@ -458,14 +497,15 @@ export const CalendarUtils = {
       permissions: {
         // We default canRead to true and others to false as a sensible security default:
         // Users should be able to read calendars by default but need explicit permission for other actions
-        canRead: Boolean(permissionsData?.canRead || permissionsData?.can_read || true),
-        canWrite: Boolean(permissionsData?.canWrite || permissionsData?.can_write || false),
-        canShare: Boolean(permissionsData?.canShare || permissionsData?.can_share || false),
-        canDelete: Boolean(permissionsData?.canDelete || permissionsData?.can_delete || false),
+        canRead:
+          permissionsData?.canRead === false || permissionsData?.can_read === false ? false : true,
+        canWrite: Boolean(permissionsData?.canWrite || permissionsData?.can_write),
+        canShare: Boolean(permissionsData?.canShare || permissionsData?.can_share),
+        canDelete: Boolean(permissionsData?.canDelete || permissionsData?.can_delete),
       },
       url: (data.url as string) || '',
       category: (data.category as string) || undefined,
-      focusPriority: (data.focusPriority as number) || (data.focus_priority as number) || undefined,
+      focusPriority: validateFocusPriority(data.focusPriority || data.focus_priority),
       metadata: (data.metadata as Record<string, unknown>) || null,
     };
   },
@@ -540,6 +580,12 @@ export const EventUtils = {
       throw new Error('Invalid event data: title/summary is required');
     }
 
+    // Validate color
+    const color = data.color as string | null | undefined;
+    if (color !== undefined && color !== null && !isValidHexColor(color)) {
+      console.warn(`Invalid color format: ${color}`);
+    }
+
     return {
       id: data.id as string,
       calendarId,
@@ -551,7 +597,9 @@ export const EventUtils = {
       location: data.location as string | null | undefined,
       organizer: data.organizer as string | null | undefined,
       participants: Array.isArray(data.participants)
-        ? (data.participants as JSONObject[]).map((p) => ParticipantUtils.toParticipant(p))
+        ? (data.participants as JSONObject[])
+            .filter((p) => p && typeof p === 'object')
+            .map((p) => ParticipantUtils.toParticipant(p))
         : undefined,
       recurrenceRule: data.recurrenceRule
         ? RecurrenceUtils.toRecurrenceRule(data.recurrenceRule as JSONObject)
@@ -562,13 +610,15 @@ export const EventUtils = {
       visibility: isValidVisibility(data.visibility) ? data.visibility : undefined,
       availability: isValidAvailability(data.availability) ? data.availability : undefined,
       reminders: Array.isArray(data.reminders)
-        ? (data.reminders as JSONObject[]).map((r) => ReminderUtils.toReminder(r))
+        ? (data.reminders as JSONObject[])
+            .filter((r) => r && typeof r === 'object')
+            .map((r) => ReminderUtils.toReminder(r))
         : undefined,
-      color: data.color as string | null | undefined,
+      color: color !== null && color !== undefined && !isValidHexColor(color) ? undefined : color,
       categories: Array.isArray(data.categories) ? (data.categories as string[]) : undefined,
       adhdCategory: (data.adhdCategory as string) || (data.adhd_category as string) || undefined,
-      focusPriority: (data.focusPriority as number) || (data.focus_priority as number) || undefined,
-      energyLevel: (data.energyLevel as number) || (data.energy_level as number) || undefined,
+      focusPriority: validateFocusPriority(data.focusPriority || data.focus_priority),
+      energyLevel: validateEnergyLevel(data.energyLevel || data.energy_level),
       relatedTasks: Array.isArray(data.relatedTasks)
         ? (data.relatedTasks as string[])
         : Array.isArray(data.related_tasks)
@@ -688,15 +738,10 @@ export const RecurrenceUtils = {
     // Safely process exDates if present
     let exDates: Date[] | undefined = undefined;
     if (Array.isArray(data.exDates) || Array.isArray(data.ex_dates)) {
-      const exDateStrings = (data.exDates || data.ex_dates) as string[];
-      exDates = [];
-
-      for (const dateStr of exDateStrings) {
-        const parsedDate = safelyParseDate(dateStr);
-        if (parsedDate) {
-          exDates.push(parsedDate);
-        }
-      }
+      const exDateStrings = (data.exDates || data.ex_dates) as unknown[];
+      exDates = exDateStrings
+        .map((dateStr) => safelyParseDate(dateStr))
+        .filter((date) => date !== undefined) as Date[];
     }
 
     return {
