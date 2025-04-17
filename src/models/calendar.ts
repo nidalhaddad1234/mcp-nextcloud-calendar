@@ -210,7 +210,7 @@ export interface Event {
   /**
    * Additional metadata for the event
    */
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> | null;
 }
 
 /**
@@ -466,7 +466,7 @@ export const CalendarUtils = {
       url: (data.url as string) || '',
       category: (data.category as string) || undefined,
       focusPriority: (data.focusPriority as number) || (data.focus_priority as number) || undefined,
-      metadata: (data.metadata as Record<string, unknown> | null) || undefined,
+      metadata: (data.metadata as Record<string, unknown>) || null,
     };
   },
 
@@ -576,7 +576,7 @@ export const EventUtils = {
           : undefined,
       created: createdDate,
       lastModified: modifiedDate,
-      metadata: data.metadata as Record<string, unknown> | null | undefined,
+      metadata: (data.metadata as Record<string, unknown>) || null,
     };
   },
 
