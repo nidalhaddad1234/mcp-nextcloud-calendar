@@ -33,6 +33,6 @@ export function setupSseHandlers(server: McpServer) {
   return {
     sseHandler,
     messageHandler,
-    transports
+    transports,
   };
 }
