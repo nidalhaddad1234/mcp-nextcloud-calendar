@@ -22,7 +22,11 @@ jobs:
         cache: 'npm'
     
     - name: Install dependencies
-      run: npm install
+      run: |
+        # First try clean install
+        npm ci || npm install
+        # If package-lock.json was updated, show the difference
+        git diff package-lock.json || true
       
     - name: Security audit
       run: npm audit --audit-level=high
