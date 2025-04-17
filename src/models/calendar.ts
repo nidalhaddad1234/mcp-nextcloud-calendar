@@ -50,17 +50,17 @@ export interface Calendar {
   /**
    * Visual category or tag for ADHD-friendly organization
    */
-  category?: string;
+  category?: string | null;
 
   /**
    * Priority level for ADHD focus management (1-10, 10 being highest)
    */
-  focusPriority?: number;
+  focusPriority?: number | null;
 
   /**
    * Additional metadata for the calendar
    */
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> | null;
 }
 
 /**
@@ -110,7 +110,7 @@ export interface Event {
   /**
    * Detailed description of the event
    */
-  description?: string;
+  description?: string | null;
 
   /**
    * Start date and time of the event
@@ -130,12 +130,12 @@ export interface Event {
   /**
    * Location of the event
    */
-  location?: string;
+  location?: string | null;
 
   /**
    * Organizer of the event
    */
-  organizer?: string;
+  organizer?: string | null;
 
   /**
    * List of event participants/attendees
@@ -170,7 +170,7 @@ export interface Event {
   /**
    * Color override for the event (hex format)
    */
-  color?: string;
+  color?: string | null;
 
   /**
    * Tags or categories for the event
@@ -180,7 +180,7 @@ export interface Event {
   /**
    * Visual category for ADHD-friendly organization
    */
-  adhd_category?: string;
+  adhdCategory?: string;
 
   /**
    * Importance/priority level for ADHD focus (1-10, 10 being highest)
@@ -225,7 +225,7 @@ export interface Participant {
   /**
    * Display name of the participant
    */
-  name?: string;
+  name?: string | null;
 
   /**
    * Participation status (accepted, declined, tentative, needs-action)
@@ -245,7 +245,7 @@ export interface Participant {
   /**
    * Response comment from the participant
    */
-  comment?: string;
+  comment?: string | null;
 }
 
 /**
@@ -324,6 +324,105 @@ export interface EventReminder {
 export type JSONObject = Record<string, unknown>;
 
 /**
+ * Type guards for validating enum values
+ */
+
+/**
+ * Validates if a value is a valid participant status
+ */
+function isValidParticipantStatus(
+  status: unknown,
+): status is 'accepted' | 'declined' | 'tentative' | 'needs-action' {
+  return (
+    status === 'accepted' ||
+    status === 'declined' ||
+    status === 'tentative' ||
+    status === 'needs-action'
+  );
+}
+
+/**
+ * Validates if a value is a valid event status
+ */
+function isValidEventStatus(status: unknown): status is 'confirmed' | 'tentative' | 'cancelled' {
+  return status === 'confirmed' || status === 'tentative' || status === 'cancelled';
+}
+
+/**
+ * Validates if a value is a valid visibility setting
+ */
+function isValidVisibility(
+  visibility: unknown,
+): visibility is 'public' | 'private' | 'confidential' {
+  return visibility === 'public' || visibility === 'private' || visibility === 'confidential';
+}
+
+/**
+ * Validates if a value is a valid availability setting
+ */
+function isValidAvailability(availability: unknown): availability is 'free' | 'busy' {
+  return availability === 'free' || availability === 'busy';
+}
+
+/**
+ * Validates if a value is a valid participant role
+ */
+function isValidParticipantRole(role: unknown): role is 'required' | 'optional' {
+  return role === 'required' || role === 'optional';
+}
+
+/**
+ * Validates if a value is a valid participant type
+ */
+function isValidParticipantType(
+  type: unknown,
+): type is 'individual' | 'group' | 'resource' | 'room' {
+  return type === 'individual' || type === 'group' || type === 'resource' || type === 'room';
+}
+
+/**
+ * Validates if a value is a valid reminder type
+ */
+function isValidReminderType(type: unknown): type is 'email' | 'notification' {
+  return type === 'email' || type === 'notification';
+}
+
+/**
+ * Validates if a value is a valid recurrence frequency
+ */
+function isValidFrequency(
+  frequency: unknown,
+): frequency is 'daily' | 'weekly' | 'monthly' | 'yearly' {
+  return (
+    frequency === 'daily' ||
+    frequency === 'weekly' ||
+    frequency === 'monthly' ||
+    frequency === 'yearly'
+  );
+}
+
+/**
+ * Safely parses a date string, returning undefined if invalid
+ */
+function safelyParseDate(dateString: unknown): Date | undefined {
+  if (!dateString) return undefined;
+
+  try {
+    if (dateString instanceof Date) return dateString;
+    if (typeof dateString === 'string') {
+      const date = new Date(dateString);
+      // Check if date is valid
+      if (isNaN(date.getTime())) return undefined;
+      return date;
+    }
+    return undefined;
+  } catch {
+    // Return undefined on any error
+    return undefined;
+  }
+}
+
+/**
  * Helper functions for serializing and deserializing calendar objects
  */
 export const CalendarUtils = {
@@ -331,40 +430,43 @@ export const CalendarUtils = {
    * Converts a raw JSON object to a Calendar interface
    */
   toCalendar(data: JSONObject): Calendar {
+    if (!data) {
+      throw new Error('Invalid calendar data: data object is required');
+    }
+
+    if (!data.id) {
+      throw new Error('Invalid calendar data: id is required');
+    }
+
+    // Extract required properties with validation
+    const displayName = (data.displayName as string) || (data.display_name as string) || '';
+    if (!displayName) {
+      throw new Error('Invalid calendar data: displayName is required');
+    }
+
+    // Extract permissions with proper fallbacks
+    const permissionsData = (data.permissions as JSONObject) || {};
+
     return {
       id: data.id as string,
-      displayName: (data.displayName as string) || (data.display_name as string) || '',
+      displayName,
       color: (data.color as string) || '#0082c9',
       owner: (data.owner as string) || '',
       isDefault: Boolean(data.isDefault || data.is_default),
       isShared: Boolean(data.isShared || data.is_shared),
       isReadOnly: Boolean(data.isReadOnly || data.is_read_only),
       permissions: {
-        canRead: Boolean(
-          (data.permissions as JSONObject)?.canRead ||
-            (data.permissions as JSONObject)?.can_read ||
-            true,
-        ),
-        canWrite: Boolean(
-          (data.permissions as JSONObject)?.canWrite ||
-            (data.permissions as JSONObject)?.can_write ||
-            false,
-        ),
-        canShare: Boolean(
-          (data.permissions as JSONObject)?.canShare ||
-            (data.permissions as JSONObject)?.can_share ||
-            false,
-        ),
-        canDelete: Boolean(
-          (data.permissions as JSONObject)?.canDelete ||
-            (data.permissions as JSONObject)?.can_delete ||
-            false,
-        ),
+        // We default canRead to true and others to false as a sensible security default:
+        // Users should be able to read calendars by default but need explicit permission for other actions
+        canRead: Boolean(permissionsData?.canRead || permissionsData?.can_read || true),
+        canWrite: Boolean(permissionsData?.canWrite || permissionsData?.can_write || false),
+        canShare: Boolean(permissionsData?.canShare || permissionsData?.can_share || false),
+        canDelete: Boolean(permissionsData?.canDelete || permissionsData?.can_delete || false),
       },
       url: (data.url as string) || '',
       category: (data.category as string) || undefined,
       focusPriority: (data.focusPriority as number) || (data.focus_priority as number) || undefined,
-      metadata: (data.metadata as Record<string, unknown>) || undefined,
+      metadata: (data.metadata as Record<string, unknown> | null) || undefined,
     };
   },
 
@@ -402,16 +504,52 @@ export const EventUtils = {
    * Converts a raw JSON object to an Event interface
    */
   toEvent(data: JSONObject): Event {
+    if (!data) {
+      throw new Error('Invalid event data: data object is required');
+    }
+
+    if (!data.id) {
+      throw new Error('Invalid event data: id is required');
+    }
+
+    if (!data.start || !data.end) {
+      throw new Error('Invalid event data: start and end dates are required');
+    }
+
+    // Safely parse dates
+    const startDate = safelyParseDate(data.start);
+    const endDate = safelyParseDate(data.end);
+    const createdDate = safelyParseDate(data.created);
+    const modifiedDate = safelyParseDate(data.lastModified) || safelyParseDate(data.last_modified);
+
+    if (!startDate || !endDate) {
+      throw new Error('Invalid event data: invalid start or end date format');
+    }
+
+    if (!createdDate || !modifiedDate) {
+      throw new Error('Invalid event data: invalid created or lastModified date format');
+    }
+
+    const calendarId = (data.calendarId as string) || (data.calendar_id as string) || '';
+    if (!calendarId) {
+      throw new Error('Invalid event data: calendarId is required');
+    }
+
+    const title = (data.title as string) || (data.summary as string) || '';
+    if (!title) {
+      throw new Error('Invalid event data: title/summary is required');
+    }
+
     return {
       id: data.id as string,
-      calendarId: (data.calendarId as string) || (data.calendar_id as string) || '',
-      title: (data.title as string) || (data.summary as string) || '',
-      description: data.description as string | undefined,
-      start: data.start instanceof Date ? data.start : new Date(data.start as string),
-      end: data.end instanceof Date ? data.end : new Date(data.end as string),
+      calendarId,
+      title,
+      description: data.description as string | null | undefined,
+      start: startDate,
+      end: endDate,
       isAllDay: Boolean(data.isAllDay || data.is_all_day),
-      location: data.location as string | undefined,
-      organizer: data.organizer as string | undefined,
+      location: data.location as string | null | undefined,
+      organizer: data.organizer as string | null | undefined,
       participants: Array.isArray(data.participants)
         ? (data.participants as JSONObject[]).map((p) => ParticipantUtils.toParticipant(p))
         : undefined,
@@ -420,15 +558,15 @@ export const EventUtils = {
         : data.recurrence_rule
           ? RecurrenceUtils.toRecurrenceRule(data.recurrence_rule as JSONObject)
           : undefined,
-      status: data.status as 'confirmed' | 'tentative' | 'cancelled' | undefined,
-      visibility: data.visibility as 'public' | 'private' | 'confidential' | undefined,
-      availability: data.availability as 'free' | 'busy' | undefined,
+      status: isValidEventStatus(data.status) ? data.status : undefined,
+      visibility: isValidVisibility(data.visibility) ? data.visibility : undefined,
+      availability: isValidAvailability(data.availability) ? data.availability : undefined,
       reminders: Array.isArray(data.reminders)
         ? (data.reminders as JSONObject[]).map((r) => ReminderUtils.toReminder(r))
         : undefined,
-      color: data.color as string | undefined,
+      color: data.color as string | null | undefined,
       categories: Array.isArray(data.categories) ? (data.categories as string[]) : undefined,
-      adhd_category: data.adhd_category as string | undefined,
+      adhdCategory: (data.adhdCategory as string) || (data.adhd_category as string) || undefined,
       focusPriority: (data.focusPriority as number) || (data.focus_priority as number) || undefined,
       energyLevel: (data.energyLevel as number) || (data.energy_level as number) || undefined,
       relatedTasks: Array.isArray(data.relatedTasks)
@@ -436,12 +574,9 @@ export const EventUtils = {
         : Array.isArray(data.related_tasks)
           ? (data.related_tasks as string[])
           : undefined,
-      created: data.created instanceof Date ? data.created : new Date(data.created as string),
-      lastModified:
-        data.lastModified instanceof Date
-          ? data.lastModified
-          : new Date((data.lastModified as string) || (data.last_modified as string)),
-      metadata: data.metadata as Record<string, unknown> | undefined,
+      created: createdDate,
+      lastModified: modifiedDate,
+      metadata: data.metadata as Record<string, unknown> | null | undefined,
     };
   },
 
@@ -473,7 +608,7 @@ export const EventUtils = {
         : undefined,
       color: event.color,
       categories: event.categories,
-      adhd_category: event.adhd_category,
+      adhd_category: event.adhdCategory,
       focus_priority: event.focusPriority,
       energy_level: event.energyLevel,
       related_tasks: event.relatedTasks,
@@ -492,14 +627,21 @@ export const ParticipantUtils = {
    * Converts a raw JSON object to a Participant interface
    */
   toParticipant(data: JSONObject): Participant {
+    if (!data) {
+      throw new Error('Invalid participant data: data object is required');
+    }
+
+    if (!data.email) {
+      throw new Error('Invalid participant data: email is required');
+    }
+
     return {
       email: (data.email as string) || '',
-      name: data.name as string | undefined,
-      status:
-        (data.status as 'accepted' | 'declined' | 'tentative' | 'needs-action') || 'needs-action',
-      role: data.role as 'required' | 'optional' | undefined,
-      type: data.type as 'individual' | 'group' | 'resource' | 'room' | undefined,
-      comment: data.comment as string | undefined,
+      name: data.name as string | null | undefined,
+      status: isValidParticipantStatus(data.status) ? data.status : 'needs-action',
+      role: isValidParticipantRole(data.role) ? data.role : undefined,
+      type: isValidParticipantType(data.type) ? data.type : undefined,
+      comment: data.comment as string | null | undefined,
     };
   },
 
@@ -526,10 +668,41 @@ export const RecurrenceUtils = {
    * Converts a raw JSON object to a RecurrenceRule interface
    */
   toRecurrenceRule(data: JSONObject): RecurrenceRule {
+    if (!data) {
+      throw new Error('Invalid recurrence rule data: data object is required');
+    }
+
+    if (!data.frequency && !isValidFrequency(data.frequency)) {
+      throw new Error('Invalid recurrence rule data: valid frequency is required');
+    }
+
+    // Safely parse the until date if present
+    let untilDate: Date | undefined = undefined;
+    if (data.until) {
+      untilDate = safelyParseDate(data.until);
+      if (data.until && !untilDate) {
+        throw new Error('Invalid recurrence rule data: invalid until date format');
+      }
+    }
+
+    // Safely process exDates if present
+    let exDates: Date[] | undefined = undefined;
+    if (Array.isArray(data.exDates) || Array.isArray(data.ex_dates)) {
+      const exDateStrings = (data.exDates || data.ex_dates) as string[];
+      exDates = [];
+
+      for (const dateStr of exDateStrings) {
+        const parsedDate = safelyParseDate(dateStr);
+        if (parsedDate) {
+          exDates.push(parsedDate);
+        }
+      }
+    }
+
     return {
-      frequency: (data.frequency as 'daily' | 'weekly' | 'monthly' | 'yearly') || 'daily',
+      frequency: isValidFrequency(data.frequency) ? data.frequency : 'daily',
       interval: data.interval as number | undefined,
-      until: data.until ? new Date(data.until as string) : undefined,
+      until: untilDate,
       count: data.count as number | undefined,
       byDay: Array.isArray(data.byDay || data.by_day)
         ? ((data.byDay || data.by_day) as ('MO' | 'TU' | 'WE' | 'TH' | 'FR' | 'SA' | 'SU')[])
@@ -543,9 +716,7 @@ export const RecurrenceUtils = {
       bySetPos: Array.isArray(data.bySetPos || data.by_set_pos)
         ? ((data.bySetPos || data.by_set_pos) as number[])
         : undefined,
-      exDates: Array.isArray(data.exDates || data.ex_dates)
-        ? ((data.exDates || data.ex_dates) as string[]).map((d) => new Date(d))
-        : undefined,
+      exDates,
     };
   },
 
@@ -575,9 +746,19 @@ export const ReminderUtils = {
    * Converts a raw JSON object to an EventReminder interface
    */
   toReminder(data: JSONObject): EventReminder {
+    if (!data) {
+      throw new Error('Invalid reminder data: data object is required');
+    }
+
+    // Convert minutesBefore to a number and validate it
+    const minutesBefore = Number(data.minutesBefore) || Number(data.minutes_before) || 10;
+    if (isNaN(minutesBefore) || minutesBefore < 0) {
+      throw new Error('Invalid reminder data: minutesBefore must be a positive number');
+    }
+
     return {
-      type: (data.type as 'email' | 'notification') || 'notification',
-      minutesBefore: (data.minutesBefore as number) || (data.minutes_before as number) || 10,
+      type: isValidReminderType(data.type) ? data.type : 'notification',
+      minutesBefore,
       isSent: Boolean(data.isSent || data.is_sent),
     };
   },
