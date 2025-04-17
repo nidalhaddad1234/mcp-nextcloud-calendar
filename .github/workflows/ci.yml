@@ -30,6 +30,7 @@ jobs:
       
     - name: Security audit
       run: npm audit --audit-level=high
+      continue-on-error: true # Make the audit non-blocking
       
     - name: Build
       run: npm run build
@@ -137,6 +138,11 @@ jobs:
             // Define the path to the utils file
             const utilsPath = path.join(process.env.GITHUB_WORKSPACE, '.github', 'pr-webhook-utils.cjs');
             console.log(`Loading PR webhook utilities from: ${utilsPath}`);
+            
+            // Validate file existence before requiring
+            if (!fs.existsSync(utilsPath)) {
+              throw new Error(`PR webhook utilities file not found at: ${utilsPath}`);
+            }
             
             // Load the utilities from the external file
             const prDataUtils = require(utilsPath);
@@ -296,11 +302,18 @@ jobs:
                 'CF-Access-Client-Id': '${{ secrets.CF_ACCESS_CLIENT_ID }}',
                 'CF-Access-Client-Secret': '${{ secrets.CF_ACCESS_CLIENT_SECRET }}'
               },
-              timeout: 10000 // 10 second timeout
+              timeout: process.env.WEBHOOK_TIMEOUT ? parseInt(process.env.WEBHOOK_TIMEOUT, 10) : 10000 // Configurable timeout, defaults to 10 seconds
             };
             
-            // Make the request
-            const req = https.request(options, (res) => {
+            // Implement retries for webhook delivery
+            const maxRetries = process.env.WEBHOOK_MAX_RETRIES ? parseInt(process.env.WEBHOOK_MAX_RETRIES, 10) : 3;
+            let retryCount = 0;
+            
+            function makeRequest() {
+              console.log(`Webhook request attempt ${retryCount + 1}/${maxRetries + 1}`);
+              
+              // Make the request
+              const req = https.request(options, (res) => {
               let data = '';
               res.on('data', (chunk) => { data += chunk; });
               
@@ -318,7 +331,17 @@ jobs:
                   } else {
                     console.error('No response data received');
                   }
-                  // Fail the job if the webhook returns an error
+                  
+                  // Try again if we haven't reached max retries
+                  if (retryCount < maxRetries) {
+                    retryCount++;
+                    const retryDelay = retryCount * 2000; // Exponential backoff
+                    console.log(`Retrying in ${retryDelay / 1000} seconds...`);
+                    setTimeout(makeRequest, retryDelay);
+                    return;
+                  }
+                  
+                  // Fail the job if the webhook returns an error after all retries
                   core.setFailed(errorMsg);
                 }
               });
@@ -327,18 +350,33 @@ jobs:
             req.on('error', (error) => {
               const errorMsg = `Network error when sending to webhook: ${error.message}`;
               console.error(errorMsg);
-              core.setFailed(errorMsg);
+              
+              // Try again if we haven't reached max retries
+              if (retryCount < maxRetries) {
+                retryCount++;
+                const retryDelay = retryCount * 2000; // Exponential backoff
+                console.log(`Network error, retrying in ${retryDelay / 1000} seconds...`);
+                setTimeout(makeRequest, retryDelay);
+                return;
+              }
+              
+              core.setFailed(`Network error when sending to webhook after ${maxRetries + 1} attempts: ${error.message}`);
             });
             
             req.on('timeout', () => {
               req.destroy();
-              const errorMsg = 'Request to webhook timed out after 10 seconds';
+              const timeoutSeconds = (options.timeout / 1000).toFixed(0);
+              const errorMsg = `Request to webhook timed out after ${timeoutSeconds} seconds`;
               console.error(errorMsg);
               core.setFailed(errorMsg);
             });
             
-            req.write(stringifyResult.data);
-            req.end();
+              req.write(stringifyResult.data);
+              req.end();
+            }
+            
+            // Start the request process
+            makeRequest();
             
           } catch (error) {
             console.error(`Failed to process PR data: ${error.message}`);

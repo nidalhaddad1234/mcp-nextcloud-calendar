@@ -1,4 +1,15 @@
 #!/bin/sh
 
+# Check if dependencies are installed
+if ! command -v npx &> /dev/null; then
+  echo "Error: npx command not found. Make sure Node.js is installed."
+  exit 1
+fi
+
+if [ ! -d "node_modules" ]; then
+  echo "Error: node_modules directory not found. Please run 'npm install' first."
+  exit 1
+fi
+
 # Run lint-staged to format and lint files before commit
 npx lint-staged

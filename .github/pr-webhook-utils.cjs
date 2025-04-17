@@ -22,7 +22,8 @@ function sanitizeText(text) {
       .replace(/(\b)([a-zA-Z0-9_.-]{43}=)(\b)/g, '[AZURE_TOKEN_REDACTED]')
       // Google Cloud credentials patterns
       .replace(/(\b)([a-zA-Z0-9_-]{28}\.[a-zA-Z0-9_-]{6}\.[a-zA-Z0-9_-]{43})(\b)/g, '[GCP_KEY_REDACTED]')
-      .replace(/(\b)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\b)/g, '[UUID_REDACTED]')
+      // Only redact UUIDs that are part of sensitive patterns (key IDs, auth tokens)
+      .replace(/(\b)(key|secret|token|auth)[_\-]?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\b)/gi, '$1[UUID_REDACTED]')
       // Remove emails, but only likely real ones (with valid TLDs)
       .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}/g, '[EMAIL_REDACTED]')
       // Remove IP addresses
@@ -63,10 +64,10 @@ function shouldIncludeFile(filename) {
 /**
  * Safely limits patch size to prevent payload issues
  * @param {string} patch - Git patch content
- * @returns {string|undefined} Limited patch or undefined on error
+ * @returns {string} Limited patch or empty string on error
  */
 function limitPatch(patch) {
-  if (!patch) return undefined;
+  if (!patch) return '';
   
   try {
     // Increase reasonable patch size limit to 30KB
@@ -77,7 +78,7 @@ function limitPatch(patch) {
     return patch;
   } catch (error) {
     console.warn(`Error limiting patch: ${error.message}`);
-    return undefined; // Return undefined on error
+    return ''; // Return empty string on error for consistent return type
   }
 }
 

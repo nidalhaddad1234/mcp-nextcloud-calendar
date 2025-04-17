@@ -30,6 +30,9 @@
   "author": "",
   "license": "ISC",
   "description": "MCP server for Nextcloud Calendar integration",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.9.0",
     "@types/express": "^5.0.1",
