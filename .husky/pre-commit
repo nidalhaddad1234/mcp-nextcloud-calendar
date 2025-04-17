@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+
+# Run lint-staged to format and lint files before commit
+npx lint-staged
