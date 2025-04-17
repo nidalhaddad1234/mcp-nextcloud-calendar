@@ -17,6 +17,12 @@ function sanitizeText(text) {
       .replace(/(\b)(xox[pbar]-[0-9a-zA-Z-]{10,})(\b)/g, '[SLACK_TOKEN_REDACTED]')
       .replace(/(\b)(sk-[a-zA-Z0-9]{32,})(\b)/g, '[API_KEY_REDACTED]')
       .replace(/(\b)(AKIA[0-9A-Z]{16})(\b)/g, '[AWS_KEY_REDACTED]')
+      // Azure credentials patterns
+      .replace(/(\b)([a-zA-Z0-9+/]{86}==)(\b)/g, '[AZURE_CERT_REDACTED]')
+      .replace(/(\b)([a-zA-Z0-9_.-]{43}=)(\b)/g, '[AZURE_TOKEN_REDACTED]')
+      // Google Cloud credentials patterns
+      .replace(/(\b)([a-zA-Z0-9_-]{28}\.[a-zA-Z0-9_-]{6}\.[a-zA-Z0-9_-]{43})(\b)/g, '[GCP_KEY_REDACTED]')
+      .replace(/(\b)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\b)/g, '[UUID_REDACTED]')
       // Remove emails, but only likely real ones (with valid TLDs)
       .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}/g, '[EMAIL_REDACTED]')
       // Remove IP addresses
@@ -44,6 +50,9 @@ function shouldIncludeFile(filename) {
     /\.pem$/i, 
     /\.pfx$/i, 
     /\.p12$/i,
+    /\.map$/i,
+    /\.creds$/i,
+    /\.secret$/i,
     // Binary files that would bloat the payload
     /\.(jpg|jpeg|png|gif|ico|pdf|zip|tar|gz|bin|exe)$/i
   ];

@@ -69,13 +69,19 @@ jobs:
               pull_number: context.issue.number
             });
             
-            // Get PR files
+            // Get PR files (limit to first 100 for efficiency)
             const files = await github.rest.pulls.listFiles({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: context.issue.number
+              pull_number: context.issue.number,
+              per_page: 100
             });
             console.log('Files changed:', files.data.length);
+            
+            // If there are more than 100 files, log a message but proceed
+            if (files.data.length === 100) {
+              console.log('Note: PR has 100+ files. Only first 100 will be processed to manage payload size.')
+            }
             
             // Setup webhook URL
             const webhookUrl = '${{ vars.WEBHOOK_URL }}';
@@ -91,18 +97,37 @@ jobs:
               throw new Error('WEBHOOK_URL must use HTTPS protocol for security');
             }
             
-            // Get PR comments
+            // SSRF protection - check for localhost and internal network URLs
+            const hostname = url.hostname.toLowerCase();
+            if (hostname === 'localhost' || 
+                hostname === '127.0.0.1' || 
+                hostname === '::1' ||
+                hostname.endsWith('.local') ||
+                hostname.startsWith('192.168.') ||
+                hostname.startsWith('10.') ||
+                hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) ||
+                hostname.startsWith('169.254.')) {
+              throw new Error('WEBHOOK_URL cannot point to localhost or internal network addresses');
+            }
+            
+            // Get PR comments (get all to count them but we'll only use last 4)
             const comments = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number
+              issue_number: context.issue.number,
+              per_page: 100,
+              sort: 'created',
+              direction: 'desc'
             });
             
-            // Get PR review comments
+            // Get PR review comments (get all to count them but we'll only use last 4)
             const reviewComments = await github.rest.pulls.listReviewComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: context.issue.number
+              pull_number: context.issue.number,
+              per_page: 100,
+              sort: 'created',
+              direction: 'desc'
             });
             
             // Import PR webhook utilities
@@ -153,26 +178,61 @@ jobs:
                   changes: file.changes,
                   patch: prDataUtils.limitPatch(file.patch)
                 })),
-              // Sanitize comments
-              comments: comments.data
-                .slice(0, 100) // Limit to 100 comments max
-                .map(comment => ({
+              // Sanitize comments - only include last 4 and a note if there are more
+              comments: (() => {
+                // Keep track of total comment count
+                const totalComments = comments.data.length;
+                
+                // Take only the last 4 (most recent) comments
+                const lastFourComments = comments.data.slice(0, 4).map(comment => ({
                   id: comment.id,
                   body: prDataUtils.sanitizeText(comment.body),
                   user: comment.user.login,
                   created_at: comment.created_at
-                })),
-              // Sanitize review comments
-              review_comments: reviewComments.data
-                .slice(0, 100) // Limit to 100 review comments max
-                .map(comment => ({
+                }));
+                
+                // If there are more than 4 comments, add a note at the beginning
+                if (totalComments > 4) {
+                  lastFourComments.unshift({
+                    id: 0,
+                    body: `Note: There are ${totalComments} total comments. Only showing the 4 most recent.`,
+                    user: "GitHub CI",
+                    created_at: new Date().toISOString()
+                  });
+                }
+                
+                return lastFourComments;
+              })(),
+              
+              // Sanitize review comments - only include last 4 and a note if there are more
+              review_comments: (() => {
+                // Keep track of total review comment count
+                const totalReviewComments = reviewComments.data.length;
+                
+                // Take only the last 4 (most recent) review comments
+                const lastFourReviewComments = reviewComments.data.slice(0, 4).map(comment => ({
                   id: comment.id,
                   body: prDataUtils.sanitizeText(comment.body),
                   user: comment.user.login,
                   path: comment.path,
                   position: comment.position,
                   created_at: comment.created_at
-                }))
+                }));
+                
+                // If there are more than 4 review comments, add a note at the beginning
+                if (totalReviewComments > 4) {
+                  lastFourReviewComments.unshift({
+                    id: 0,
+                    body: `Note: There are ${totalReviewComments} total review comments. Only showing the 4 most recent.`,
+                    user: "GitHub CI",
+                    path: "",
+                    position: null,
+                    created_at: new Date().toISOString()
+                  });
+                }
+                
+                return lastFourReviewComments;
+              })()
             };
             
             console.log('Sending PR data to webhook...');
@@ -181,10 +241,18 @@ jobs:
             const payloadSize = JSON.stringify(prData).length;
             console.log(`Payload size: ${(payloadSize / 1024).toFixed(2)} KB`);
             
-            // Fail if payload is too large (>5MB)
-            const maxPayloadSize = 5 * 1024 * 1024;
-            if (payloadSize > maxPayloadSize) {
-              throw new Error(`Payload size (${payloadSize} bytes) exceeds maximum allowed size (${maxPayloadSize} bytes)`);
+            // Skip webhook if payload is too large (>50KB) for AI context management
+            const idealMaxSize = 50 * 1024;
+            const hardMaxSize = 5 * 1024 * 1024;
+            
+            if (payloadSize > hardMaxSize) {
+              console.warn(`Payload size (${payloadSize} bytes) exceeds maximum allowed size (${hardMaxSize} bytes). Aborting webhook call.`);
+              return;
+            }
+            
+            if (payloadSize > idealMaxSize) {
+              console.warn(`Payload size (${(payloadSize / 1024).toFixed(2)} KB) exceeds ideal maximum size (50 KB) for AI context. Consider reducing file patch content.`);
+              // Continue with webhook call, but warn about potential context issues
             }
             
             // Use https request
@@ -242,7 +310,14 @@ jobs:
                 } else {
                   const errorMsg = `Failed to send PR data to webhook: Status ${res.statusCode}`;
                   console.error(errorMsg);
-                  console.error(`Response: ${data}`);
+                  // Limit response data in logs to avoid exposing sensitive information
+                  if (data && data.length > 100) {
+                    console.error(`Response: ${data.substring(0, 100)}... [truncated]`);
+                  } else if (data) {
+                    console.error(`Response: ${data}`);
+                  } else {
+                    console.error('No response data received');
+                  }
                   // Fail the job if the webhook returns an error
                   core.setFailed(errorMsg);
                 }
