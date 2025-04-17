@@ -49,81 +49,9 @@ jobs:
       with:
         fetch-depth: 0
     
-    - name: Create PR webhook utils
+    - name: Setup PR webhook utilities
       run: |
-        mkdir -p .github
-        cat > .github/pr-webhook-utils.cjs << 'EOF'
-// Utilities for processing and sanitizing PR data
-module.exports = {
-  // Sanitize text to prevent injection and limit size
-  sanitizeText(text) {
-    if (!text) return "";
-    // Limit text length and strip any potentially harmful content
-    return text.toString().substring(0, 10000);
-  },
-
-  // Determine if a file should be included in the PR data
-  shouldIncludeFile(filename) {
-    // Skip files that might contain sensitive data
-    const sensitivePatterns = [
-      /\.env($|\.)/i,
-      /secret/i,
-      /password/i,
-      /credential/i,
-      /private.*key/i,
-      /\.pem$/i,
-      /\.p12$/i,
-      /\.pfx$/i,
-      /\.key$/i,
-      /token/i
-    ];
-    
-    return !sensitivePatterns.some(pattern => pattern.test(filename));
-  },
-
-  // Limit patch size to prevent oversized payloads
-  limitPatch(patch) {
-    if (!patch) return null;
-    // Limit patch size to 50KB max
-    return patch.toString().substring(0, 50000);
-  },
-
-  // Safely stringify JSON with error handling
-  safeStringify(data) {
-    try {
-      return {
-        success: true,
-        data: JSON.stringify(data)
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message,
-        data: null
-      };
-    }
-  },
-
-  // Create a simplified PR data object when full serialization fails
-  createSimplifiedPrData(pr, context) {
-    return {
-      number: pr.data.number,
-      title: this.sanitizeText(pr.data.title),
-      repository: {
-        name: context.repo.repo,
-        owner: context.repo.owner
-      },
-      head: {
-        ref: pr.data.head.ref,
-        sha: pr.data.head.sha
-      },
-      base: {
-        ref: pr.data.base.ref
-      }
-    };
-  }
-};
-EOF
+        # PR webhook utilities are committed to the repository
     
     - name: Send PR data to webhook for code review
       uses: actions/github-script@v7
