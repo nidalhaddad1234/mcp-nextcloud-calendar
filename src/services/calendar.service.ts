@@ -4,6 +4,23 @@ import { NextcloudConfig } from '../config/config.js';
 import { Calendar, CalendarUtils } from '../models/index.js';
 import { createLogger } from './logger.js';
 
+/**
+ * Escapes special characters in a string to make it safe for XML
+ * @param input The string to escape
+ * @returns The escaped string
+ */
+function escapeXml(input: string | null | undefined): string {
+  if (input === null || input === undefined) {
+    return '';
+  }
+  return String(input)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 export class CalendarService {
   private config: NextcloudConfig;
   private authHeader: string;
@@ -13,19 +30,24 @@ export class CalendarService {
 
   constructor(config: NextcloudConfig) {
     this.config = config;
-    
+
     if (!this.config.baseUrl || !this.config.username || !this.config.appToken) {
       throw new Error('Nextcloud configuration is incomplete');
     }
-    
+
     // Remove trailing slash if present
     this.baseUrl = this.config.baseUrl.replace(/\/$/, '');
-    
+
     // Create the CalDAV URL for the user
     this.caldavUrl = `${this.baseUrl}/remote.php/dav/calendars/${this.config.username}/`;
-    
-    this.logger.info('CalendarService initialized successfully');
-    
+
+    // Log initialization without sensitive details
+    this.logger.info('CalendarService initialized successfully', {
+      baseUrl: this.baseUrl,
+      username: this.config.username,
+      // Don't include appToken
+    });
+
     // Create Basic Auth header
     // Use global Buffer (available in Node.js)
     // eslint-disable-next-line no-undef
@@ -352,16 +374,21 @@ export class CalendarService {
       // Calendar URL to create
       const calendarUrl = this.caldavUrl + calendarId + '/';
 
-      // Build XML for calendar properties
+      // Build XML for calendar properties - escape all user input
+      const safeDisplayName = escapeXml(newCalendar.displayName);
+      const safeColor = escapeXml(newCalendar.color || '#0082c9');
+      const safeCategory = newCalendar.category ? escapeXml(newCalendar.category) : '';
+      const safeFocusPriority = newCalendar.focusPriority ? escapeXml(String(newCalendar.focusPriority)) : '';
+
       const proppatchXml = `<?xml version="1.0" encoding="UTF-8"?>
         <x0:propertyupdate xmlns:x0="DAV:" xmlns:x1="http://apple.com/ns/ical/"
                           xmlns:x2="http://owncloud.org/ns" xmlns:x3="http://calendarserver.org/ns/">
           <x0:set>
             <x0:prop>
-              <x0:displayname>${newCalendar.displayName}</x0:displayname>
-              <x1:calendar-color>${newCalendar.color || '#0082c9'}</x1:calendar-color>
-              ${newCalendar.category ? `<x2:calendar-category>${newCalendar.category}</x2:calendar-category>` : ''}
-              ${newCalendar.focusPriority ? `<x2:calendar-focus-priority>${newCalendar.focusPriority}</x2:calendar-focus-priority>` : ''}
+              <x0:displayname>${safeDisplayName}</x0:displayname>
+              <x1:calendar-color>${safeColor}</x1:calendar-color>
+              ${safeCategory ? `<x2:calendar-category>${safeCategory}</x2:calendar-category>` : ''}
+              ${safeFocusPriority ? `<x2:calendar-focus-priority>${safeFocusPriority}</x2:calendar-focus-priority>` : ''}
             </x0:prop>
           </x0:set>
         </x0:propertyupdate>`;
@@ -379,7 +406,7 @@ export class CalendarService {
           <x0:mkcalendar xmlns:x0="urn:ietf:params:xml:ns:caldav">
             <x0:set>
               <x0:prop>
-                <x0:displayname>${newCalendar.displayName}</x0:displayname>
+                <x0:displayname>${safeDisplayName}</x0:displayname>
               </x0:prop>
             </x0:set>
           </x0:mkcalendar>`
@@ -478,22 +505,23 @@ export class CalendarService {
       const calendarUrl = this.caldavUrl + calendarId + '/';
 
       // Build XML property update document - only include properties that are being updated
+      // Escape all user input to prevent XML injection
       let propXml = '';
 
       if (updates.displayName !== undefined) {
-        propXml += `<x0:displayname>${updates.displayName}</x0:displayname>`;
+        propXml += `<x0:displayname>${escapeXml(updates.displayName)}</x0:displayname>`;
       }
 
       if (updates.color !== undefined) {
-        propXml += `<x1:calendar-color>${updates.color}</x1:calendar-color>`;
+        propXml += `<x1:calendar-color>${escapeXml(updates.color)}</x1:calendar-color>`;
       }
 
       if (updates.category !== undefined) {
-        propXml += `<x2:calendar-category>${updates.category}</x2:calendar-category>`;
+        propXml += `<x2:calendar-category>${escapeXml(updates.category)}</x2:calendar-category>`;
       }
 
       if (updates.focusPriority !== undefined) {
-        propXml += `<x2:calendar-focus-priority>${updates.focusPriority}</x2:calendar-focus-priority>`;
+        propXml += `<x2:calendar-focus-priority>${escapeXml(String(updates.focusPriority))}</x2:calendar-focus-priority>`;
       }
 
       // Only send PROPPATCH if there are properties to update

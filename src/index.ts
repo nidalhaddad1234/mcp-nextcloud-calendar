@@ -1,26 +1,8 @@
 #!/usr/bin/env node
 // Import Express in a way compatible with both ESM and TypeScript
 import express from 'express';
-// Import the MCP server with a more flexible type definition
+// Import the MCP server with now-proper type definitions
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
-// Add type definition to work around missing registerTool method in type definition
-interface ToolParameter {
-  type: string;
-  description: string;
-  required?: boolean;
-}
-
-interface Tool {
-  name: string;
-  description: string;
-  parameters?: Record<string, ToolParameter>;
-  execute: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
-}
-
-interface ExtendedMcpServer extends McpServer {
-  registerTool: (tool: Tool) => void;
-}
 import { loadConfig, validateEnvironmentVariables } from './config/config.js';
 import { healthHandler } from './handlers/health.js';
 import { setupMcpTransport } from './handlers/mcp-transport.js';
@@ -37,9 +19,26 @@ if (validation.missing.length > 0) {
   });
 }
 
+// Check if we have valid configuration to start the server
+if (!validation.isValid) {
+  console.error('ERROR: Invalid configuration. Server cannot start.');
+  console.error('Please provide the required environment variables and restart the server.');
+  process.exit(1);
+}
+
 // Load configuration
 const config = loadConfig();
 const { server: serverConfig, nextcloud: nextcloudConfig } = config;
+
+// Show a clear message about what features are available
+if (!validation.serverReady) {
+  console.warn('WARNING: Server is running with minimal configuration.');
+  console.warn('Some features may not work correctly without proper server configuration.');
+}
+
+if (!validation.calendarReady) {
+  console.warn('WARNING: Calendar service is disabled due to missing configuration.');
+}
 
 // Initialize services
 let calendarService: CalendarService | null = null;
@@ -66,7 +65,7 @@ if (validation.calendarReady) {
 const server = new McpServer({
   name: serverConfig.serverName,
   version: serverConfig.serverVersion,
-}) as ExtendedMcpServer;
+});
 
 // Register calendar tools if calendar service is available
 if (calendarService) {

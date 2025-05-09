@@ -53,49 +53,114 @@ export class Logger {
   }
 
   /**
+   * Masks sensitive information in objects before logging
+   * @param data Object containing potentially sensitive information
+   * @returns Object with sensitive fields masked
+   */
+  static maskSensitiveData<T>(data: T): T {
+    if (!data || typeof data !== 'object') {
+      return data;
+    }
+
+    // Define sensitive fields to mask, add more as needed
+    const sensitiveFields = [
+      'password', 'token', 'secret', 'key', 'auth', 'credentials',
+      'appToken', 'app_token', 'authorization', 'apiKey', 'api_key'
+    ];
+
+    // Create a copy to avoid modifying the original
+    const maskedData = { ...data as object } as any;
+
+    // Recursively mask sensitive data
+    for (const [key, value] of Object.entries(maskedData)) {
+      // Check if the key is sensitive
+      const isSensitive = sensitiveFields.some(field =>
+        key.toLowerCase().includes(field.toLowerCase()));
+
+      if (isSensitive && value) {
+        // Mask the sensitive value - preserve the first and last character
+        if (typeof value === 'string' && value.length > 4) {
+          maskedData[key] = `${value.substring(0, 1)}***${value.substring(value.length - 1)}`;
+        } else {
+          maskedData[key] = '***';
+        }
+      } else if (value && typeof value === 'object') {
+        // Recursively mask nested objects
+        maskedData[key] = Logger.maskSensitiveData(value);
+      }
+    }
+
+    return maskedData as T;
+  }
+
+  /**
    * Debug level logging, usually only enabled in development
+   * Automatically masks sensitive information in parameters
    */
   debug(message: string, ...optionalParams: unknown[]): void {
     if (this.logLevel <= LogLevel.DEBUG) {
+      // Mask sensitive information in the optional parameters
+      const maskedParams = optionalParams.map(param =>
+        typeof param === 'object' ? Logger.maskSensitiveData(param) : param
+      );
+
       console.log(
         COLORS.gray + this.formatMessage('DEBUG', message) + COLORS.reset,
-        ...optionalParams
+        ...maskedParams
       );
     }
   }
 
   /**
    * Info level logging for general application information
+   * Automatically masks sensitive information in parameters
    */
   info(message: string, ...optionalParams: unknown[]): void {
     if (this.logLevel <= LogLevel.INFO) {
+      // Mask sensitive information in the optional parameters
+      const maskedParams = optionalParams.map(param =>
+        typeof param === 'object' ? Logger.maskSensitiveData(param) : param
+      );
+
       console.log(
         COLORS.green + this.formatMessage('INFO', message) + COLORS.reset,
-        ...optionalParams
+        ...maskedParams
       );
     }
   }
 
   /**
    * Warning level logging for potential issues that don't block execution
+   * Automatically masks sensitive information in parameters
    */
   warn(message: string, ...optionalParams: unknown[]): void {
     if (this.logLevel <= LogLevel.WARN) {
+      // Mask sensitive information in the optional parameters
+      const maskedParams = optionalParams.map(param =>
+        typeof param === 'object' ? Logger.maskSensitiveData(param) : param
+      );
+
       console.warn(
         COLORS.yellow + this.formatMessage('WARN', message) + COLORS.reset,
-        ...optionalParams
+        ...maskedParams
       );
     }
   }
 
   /**
    * Error level logging for actual errors that might affect functionality
+   * Automatically masks sensitive information in parameters
    */
   error(message: string, ...optionalParams: unknown[]): void {
     if (this.logLevel <= LogLevel.ERROR) {
+      // Mask sensitive information in the optional parameters
+      const maskedParams = optionalParams.map(param =>
+        typeof param === 'object' ? Logger.maskSensitiveData(param) : param
+      );
+
       console.error(
         COLORS.red + this.formatMessage('ERROR', message) + COLORS.reset,
-        ...optionalParams
+        ...maskedParams
       );
     }
   }

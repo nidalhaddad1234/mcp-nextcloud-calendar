@@ -52,15 +52,16 @@ export function validateEnvironmentVariables(): {
 
   // Check if any Nextcloud vars are missing
   const missingNextcloud = nextcloudVars.filter(varName => !process.env[varName]);
+  const missingServer = serverVars.filter(varName => !process.env[varName]);
 
   // The server can function without Nextcloud config, but calendar service won't be available
   const calendarReady = missingNextcloud.length === 0;
 
-  // The overall validity only requires the basic server config to be valid
-  const isValid = true; // Server can start even with missing environment variables
+  // Server can start with defaults for server vars, but should warn
+  const serverReady = missingServer.length < serverVars.length;
 
-  // Determine if the server is ready for basic operation
-  const serverReady = true; // Server can always start with default settings
+  // Only valid if at least one feature is available (either basic server or calendar)
+  const isValid = serverReady || (missing.length < (serverVars.length + nextcloudVars.length));
 
   return {
     isValid,
