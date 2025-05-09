@@ -105,8 +105,8 @@ if (calendarService) {
         }
 
         const newCalendar = {
-          displayName: params.displayName,
-          color: params.color || '#0082c9',
+          displayName: String(params.displayName),
+          color: params.color ? String(params.color) : '#0082c9',
           owner: '', // Will be assigned by service
           isDefault: false,
           isShared: false,
@@ -117,7 +117,7 @@ if (calendarService) {
             canShare: true,
             canDelete: true
           },
-          category: params.category,
+          category: params.category ? String(params.category) : undefined,
           focusPriority: params.focusPriority ? Number(params.focusPriority) : undefined,
           metadata: null
         };
@@ -151,17 +151,18 @@ if (calendarService) {
           return { success: false, error: 'Calendar ID is required' };
         }
 
+        const id = String(params.id);
         const updates: Record<string, unknown> = {};
-        if (params.displayName !== undefined) updates.displayName = params.displayName;
-        if (params.color !== undefined) updates.color = params.color;
-        if (params.category !== undefined) updates.category = params.category;
+        if (params.displayName !== undefined) updates.displayName = String(params.displayName);
+        if (params.color !== undefined) updates.color = String(params.color);
+        if (params.category !== undefined) updates.category = String(params.category);
         if (params.focusPriority !== undefined) updates.focusPriority = Number(params.focusPriority);
 
         if (Object.keys(updates).length === 0) {
           return { success: false, error: 'No update parameters provided' };
         }
 
-        const calendar = await calendarService.updateCalendar(params.id, updates);
+        const calendar = await calendarService.updateCalendar(id, updates);
         return { success: true, calendar };
       } catch (error) {
         console.error('Error in updateCalendar tool:', error);
@@ -186,7 +187,7 @@ if (calendarService) {
           return { success: false, error: 'Calendar ID is required' };
         }
 
-        const result = await calendarService.deleteCalendar(params.id);
+        const result = await calendarService.deleteCalendar(String(params.id));
         return { success: result };
       } catch (error) {
         console.error('Error in deleteCalendar tool:', error);

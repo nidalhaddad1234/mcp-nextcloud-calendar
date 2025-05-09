@@ -181,7 +181,7 @@ export class CalendarService {
     }
 
     // Extract the calendar ID
-    const calendarId = this.extractCalendarId(response['d:href']);
+    const calendarId = this.extractCalendarId(String(response['d:href']));
     if (!calendarId) {
       return null;
     }
