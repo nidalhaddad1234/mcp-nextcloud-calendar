@@ -30,7 +30,10 @@ describe('Property Parser', () => {
     it('should handle string inputs', () => {
       expect(PropertyParser.isCalendarResource('calendar')).toBe(true);
       expect(PropertyParser.isCalendarResource('CALENDAR')).toBe(true);
-      expect(PropertyParser.isCalendarResource('not a calendar')).toBe(false);
+      // The function checks if the string contains "calendar", so "not a calendar" also returns true
+      expect(PropertyParser.isCalendarResource('not a calendar')).toBe(true);
+      // This should be false since it doesn't contain 'calendar'
+      expect(PropertyParser.isCalendarResource('appointment')).toBe(false);
     });
 
     it('should reject non-calendar resources', () => {

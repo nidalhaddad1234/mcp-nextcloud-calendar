@@ -27,9 +27,11 @@ declare module '@modelcontextprotocol/sdk/server/mcp.js' {
     close(): void;
   }
 
+  // Make the body property optional to accommodate different transport types
   interface McpRequest {
+    sessionId?: string;
     session?: McpSession;
-    body: Record<string, unknown>;
+    body?: Record<string, unknown>;
   }
 
   export class McpServer {

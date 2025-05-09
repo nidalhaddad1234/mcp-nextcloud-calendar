@@ -1,7 +1,7 @@
 /**
  * HTTP client for interacting with Nextcloud CalDAV API
  */
-import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
+import axios from 'axios';
 import { createLogger } from '../logger.js';
 
 const logger = createLogger('CalendarHttpClient');

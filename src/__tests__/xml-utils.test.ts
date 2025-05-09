@@ -15,9 +15,9 @@ describe('XML Utilities', () => {
     });
 
     it('should convert non-string values to strings', () => {
-      // @ts-ignore: Testing behavior with invalid input type
+      // @ts-expect-error: Testing behavior with invalid input type
       expect(XmlUtils.escapeXml(123)).toBe('123');
-      // @ts-ignore: Testing behavior with invalid input type
+      // @ts-expect-error: Testing behavior with invalid input type
       expect(XmlUtils.escapeXml(true)).toBe('true');
     });
   });

@@ -1,10 +1,7 @@
 /**
  * Utilities for parsing and handling calendar properties
  */
-import { createLogger } from '../logger.js';
 import { Calendar, CalendarPermissions, CalendarUtils } from '../../models/index.js';
-
-const logger = createLogger('CalendarPropertyParser');
 
 /**
  * Extract the calendar ID from a WebDAV href

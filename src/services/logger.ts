@@ -69,7 +69,7 @@ export class Logger {
     ];
 
     // Create a copy to avoid modifying the original
-    const maskedData = { ...data as object } as any;
+    const maskedData = { ...data as object } as Record<string, unknown>;
 
     // Recursively mask sensitive data
     for (const [key, value] of Object.entries(maskedData)) {
