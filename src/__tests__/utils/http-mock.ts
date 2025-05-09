@@ -1,22 +1,49 @@
 /**
  * Utilities for mocking HTTP requests in tests
  */
-import axios from 'axios';
+// Note: axios is imported but mocked in test files
+import { jest } from '@jest/globals';
 import { Calendar, Event } from '../../models/calendar.js';
 import { XMLResponseFactory } from './xml-response-factory.js';
 
-// We need to explicitly mock axios
-// Since we're using ESM, the jest.mock call must be in the test files themselves
+// Mock axios for ESM environment
+const mockAxiosImpl = jest.fn(() => Promise.resolve({ data: '', status: 200 }));
+
+// Add mock methods to the implementation
+mockAxiosImpl.mockResolvedValueOnce = jest.fn();
+mockAxiosImpl.mockRejectedValueOnce = jest.fn();
+
+/**
+ * Setup axios mock for a test file
+ * Must be called at the beginning of each test file to set up the mock properly
+ */
+export function setupAxiosMock() {
+  // Clear previous mocks
+  jest.resetAllMocks();
+
+  // Reset the axios mock implementation functions
+  mockAxiosImpl.mockResolvedValueOnce.mockReset();
+  mockAxiosImpl.mockRejectedValueOnce.mockReset();
+
+  // Return the mock implementation for configuration
+  return mockAxiosImpl;
+}
 
 /**
  * HTTP mocking utilities for tests
  */
 export const HttpMock = {
   /**
-   * Reset all mocks
+   * Create a standard axios response
    */
-  reset(): void {
-    // When using this in your test, make sure to call jest.resetAllMocks();
+  createResponse(data: any, status = 200, headers = {}, statusText = 'OK') {
+    return {
+      data,
+      status,
+      headers,
+      config: {} as any,
+      statusText,
+    };
   },
 
   /**
@@ -34,14 +61,12 @@ export const HttpMock = {
       username: options?.username,
     });
 
-    // This is used within a jest.mock environment in the test file
-    (axios as unknown as jest.Mock).mockResolvedValueOnce({
-      data: response,
-      status: 207, // Multi-Status
-      headers: {},
-      config: {} as any,
-      statusText: 'Multi-Status',
-    });
+    mockAxiosImpl.mockResolvedValueOnce(this.createResponse(
+      response,
+      207, // Multi-Status
+      {},
+      'Multi-Status'
+    ));
   },
 
   /**
@@ -59,52 +84,48 @@ export const HttpMock = {
       username: options?.username,
     });
 
-    (axios as unknown as jest.Mock).mockResolvedValueOnce({
-      data: response,
-      status: 207, // Multi-Status
-      headers: {},
-      config: {} as any,
-      statusText: 'Multi-Status',
-    });
+    mockAxiosImpl.mockResolvedValueOnce(this.createResponse(
+      response,
+      207, // Multi-Status
+      {},
+      'Multi-Status'
+    ));
   },
 
   /**
    * Mock a successful calendar creation (MKCALENDAR)
    */
   mockSuccessfulCalendarCreation(): void {
-    (axios as unknown as jest.Mock).mockResolvedValueOnce({
-      data: XMLResponseFactory.createMkcalendarResponse(),
-      status: 201, // Created
-      headers: {},
-      config: {} as any,
-      statusText: 'Created',
-    });
+    mockAxiosImpl.mockResolvedValueOnce(this.createResponse(
+      XMLResponseFactory.createMkcalendarResponse(),
+      201, // Created
+      {},
+      'Created'
+    ));
   },
 
   /**
    * Mock a successful property update (PROPPATCH)
    */
   mockSuccessfulPropertyUpdate(): void {
-    (axios as unknown as jest.Mock).mockResolvedValueOnce({
-      data: XMLResponseFactory.createProppatchResponse(),
-      status: 207, // Multi-Status
-      headers: {},
-      config: {} as any,
-      statusText: 'Multi-Status',
-    });
+    mockAxiosImpl.mockResolvedValueOnce(this.createResponse(
+      XMLResponseFactory.createProppatchResponse(),
+      207, // Multi-Status
+      {},
+      'Multi-Status'
+    ));
   },
 
   /**
    * Mock a successful calendar or event deletion
    */
   mockSuccessfulDeletion(): void {
-    (axios as unknown as jest.Mock).mockResolvedValueOnce({
-      data: '',
-      status: 204, // No Content
-      headers: {},
-      config: {} as any,
-      statusText: 'No Content',
-    });
+    mockAxiosImpl.mockResolvedValueOnce(this.createResponse(
+      '',
+      204, // No Content
+      {},
+      'No Content'
+    ));
   },
 
   /**
@@ -117,13 +138,12 @@ export const HttpMock = {
       headers.etag = etag;
     }
 
-    (axios as unknown as jest.Mock).mockResolvedValueOnce({
-      data: '',
-      status: 201, // Created (or 204 No Content for updates, both work)
+    mockAxiosImpl.mockResolvedValueOnce(this.createResponse(
+      '',
+      201, // Created (or 204 No Content for updates, both work)
       headers,
-      config: {} as any,
-      statusText: 'Created',
-    });
+      'Created'
+    ));
   },
 
   /**
@@ -131,15 +151,12 @@ export const HttpMock = {
    * @param etag ETag header value
    */
   mockSuccessfulHeadRequest(etag: string): void {
-    (axios as unknown as jest.Mock).mockResolvedValueOnce({
-      data: '',
-      status: 200,
-      headers: {
-        etag: etag,
-      },
-      config: {} as any,
-      statusText: 'OK',
-    });
+    mockAxiosImpl.mockResolvedValueOnce(this.createResponse(
+      '',
+      200,
+      { etag },
+      'OK'
+    ));
   },
 
   /**
@@ -155,7 +172,7 @@ export const HttpMock = {
       data: XMLResponseFactory.createErrorResponse(status, message),
     };
 
-    (axios as unknown as jest.Mock).mockRejectedValueOnce(error);
+    mockAxiosImpl.mockRejectedValueOnce(error);
   },
 
   /**
@@ -168,7 +185,7 @@ export const HttpMock = {
     (error as any).request = {}; // Request exists but no response
     (error as any).response = undefined;
 
-    (axios as unknown as jest.Mock).mockRejectedValueOnce(error);
+    mockAxiosImpl.mockRejectedValueOnce(error);
   },
 
   /**

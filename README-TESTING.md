@@ -1,50 +1,137 @@
-# Unified Testing Approach for MCP Calendar Service
+# Testing Approach for MCP Nextcloud Calendar
 
-This project implements a standardized approach to testing the MCP Calendar Service.
+This document provides an overview of the testing approach for the MCP Nextcloud Calendar project.
 
-## Overview
+## Test Architecture
 
-The testing utilities can be found in `src/__tests__/utils/` and include:
+We have implemented a unified testing approach that includes:
 
-1. **ModelFactory**: Creates test instances of models (Calendar, Event, etc.)
-2. **XMLResponseFactory**: Generates XML responses for CalDAV operations
-3. **ConfigFactory**: Creates config objects for testing
-4. **Fixtures**: Provides standard test data for common scenarios
+1. **Model factories** - For creating test instances of domain models (Calendar, Event, etc.)
+2. **XML response factories** - For generating CalDAV XML responses for various operations
+3. **Mocking utilities** - For consistent HTTP request mocking
+4. **Fixtures** - For common test data
+5. **Config factories** - For testing configurations
+
+## Key Components
+
+### Model Factory
+
+The `ModelFactory` creates test instances of domain models with sensible defaults:
+
+```typescript
+// Create a calendar with default values
+const calendar = ModelFactory.createCalendar();
+
+// Create a calendar with specific properties
+const customCalendar = ModelFactory.createCalendar({
+  id: 'personal',
+  displayName: 'My Personal Calendar',
+  isDefault: true
+});
+
+// Create multiple calendars
+const calendars = ModelFactory.createCalendars(3);
+```
+
+### XML Response Factory
+
+The `XMLResponseFactory` generates properly formatted CalDAV XML responses:
+
+```typescript
+// Generate PROPFIND response for calendars
+const propfindResponse = XMLResponseFactory.createPropfindResponse({
+  calendars: calendars
+});
+
+// Generate error response
+const errorResponse = XMLResponseFactory.createErrorResponse(404, 'Not Found');
+```
+
+### HTTP Mocking
+
+There are two approaches to mocking HTTP requests:
+
+**Approach 1:** Using simple axios mocking (recommended)
+```typescript
+// Mock axios module
+jest.mock('axios');
+
+// In beforeEach
+beforeEach(() => {
+  jest.clearAllMocks();
+  jest.resetAllMocks();
+
+  // Set up base axios mock implementation
+  axios.default = jest.fn().mockResolvedValue({ data: '', status: 200 });
+  axios.isAxiosError = jest.fn().mockReturnValue(true);
+});
+
+// In tests
+(axios as any).mockResolvedValueOnce({
+  data: XMLResponseFactory.createPropfindResponse({ calendars }),
+  status: 207,
+  headers: {},
+  statusText: 'Multi-Status'
+});
+```
+
+**Approach 2:** For more complex mocking, consider using a library like axios-mock-adapter.
+
+### Fixtures
+
+The `Fixtures` module provides common test data:
+
+```typescript
+// Get predefined calendars
+const personal = Fixtures.calendars.personal;
+const work = Fixtures.calendars.work;
+
+// Get all standard calendars
+const allCalendars = Fixtures.getAllCalendars();
+```
+
+### Config Factory
+
+The `ConfigFactory` creates test configurations:
+
+```typescript
+// Create a standard config for tests
+const config = ConfigFactory.createNextcloudConfig();
+
+// Create a config with overrides
+const customConfig = ConfigFactory.createNextcloudConfig({
+  baseUrl: 'https://custom.nextcloud.com',
+  username: 'testuser'
+});
+```
 
 ## Working Examples
 
 The following tests demonstrate the key components of our testing approach:
 
-1. `src/__tests__/model-factories.test.ts` - Tests the model factories and fixtures functionality
-2. `src/__tests__/xml-factory.test.ts` - Tests the XML response factory functionality
+1. `src/__tests__/model-factories.test.ts` - Tests the model factories and fixtures
+2. `src/__tests__/xml-factory.test.ts` - Tests the XML response factory
+3. `src/__tests__/model-factory.test.ts` - Tests the model factory implementation
 
-## HTTP Mocking Notes
+## Best Practices
 
-Due to challenges with mocking axios in an ESM environment, we recommend either:
+1. **Use factories consistently** - Prefer factory methods over manual object creation
+2. **Reset mocks between tests** - Each test should start with a clean state
+3. **Focus tests on behavior** - Test the API, not implementation details
+4. **Use descriptive test names** - Tests should read like documentation
+5. **Verify the right assertions** - Focus on what matters, not implementation details
 
-1. Using a manual approach to mock axios in your tests:
-   ```typescript
-   // Mock axios at the module level
-   jest.mock('axios');
+## Notes on ESM and Jest
 
-   // In your test
-   (axios as jest.Mock).mockResolvedValueOnce({
-     data: XMLResponseFactory.createPropfindResponse({ calendars }),
-     status: 207
-   });
-   ```
+This project uses ES Modules (ESM), which requires some special handling with Jest:
 
-2. Or using a library like `axios-mock-adapter` when writing actual service tests:
-   ```typescript
-   import MockAdapter from 'axios-mock-adapter';
-
-   const mockAxios = new MockAdapter(axios);
-   mockAxios.onGet(/\/calendars/).reply(200, responseData);
-   ```
+- Jest's mocking API works differently with ESM modules
+- Use `jest.mock('axios')` at the module level before importing axios
+- For persistent issues, consider using a third-party library like axios-mock-adapter
 
 ## Documentation
 
-For comprehensive testing guidelines, see `src/__tests__/README.md`.
+For detailed examples and guidelines, see `src/__tests__/docs/README.md`.
 
 ## Migration Plan
 

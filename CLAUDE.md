@@ -110,6 +110,58 @@ Configuration is loaded from environment variables with defaults:
 - The project uses Jest for testing
 - Run tests with `npm run test`
 
+#### Testing Approach
+The project implements a unified testing approach with the following components:
+
+1. **Model factories** - Create test instances of Calendar, Event, and other models
+   ```typescript
+   // Create a calendar with default values
+   const calendar = ModelFactory.createCalendar();
+   // With custom properties
+   const customCalendar = ModelFactory.createCalendar({ displayName: 'Custom', isDefault: true });
+   ```
+
+2. **XML response factories** - Generate XML responses for CalDAV operations
+   ```typescript
+   // Generate PROPFIND response
+   const response = XMLResponseFactory.createPropfindResponse({ calendars });
+   // Generate error response
+   const errorXml = XMLResponseFactory.createErrorResponse(404, 'Not Found');
+   ```
+
+3. **HTTP mocking** - Consistently mock axios for HTTP requests
+   ```typescript
+   // Mock axios module
+   jest.mock('axios');
+
+   // In beforeEach
+   beforeEach(() => {
+     jest.clearAllMocks();
+     axios.default = jest.fn().mockResolvedValue({ data: '', status: 200 });
+     axios.isAxiosError = jest.fn().mockReturnValue(true);
+   });
+
+   // In tests
+   (axios as any).mockResolvedValueOnce({
+     data: XMLResponseFactory.createPropfindResponse({ calendars }),
+     status: 207
+   });
+   ```
+
+4. **Fixtures** - Pre-defined test data for common scenarios
+   ```typescript
+   // Get predefined calendars
+   const personal = Fixtures.calendars.personal;
+   const allCalendars = Fixtures.getAllCalendars();
+   ```
+
+5. **Config factories** - Create test configurations
+   ```typescript
+   const config = ConfigFactory.createNextcloudConfig();
+   ```
+
+See `README-TESTING.md` and `src/__tests__/docs/README.md` for more detailed documentation on the testing approach.
+
 ### Environment Setup
 1. Create a `.env` file in the project root based on `.env.example`
 2. Configure Nextcloud credentials (base URL, username, app token)

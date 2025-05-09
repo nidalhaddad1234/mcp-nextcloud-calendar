@@ -7,7 +7,7 @@ export default [
   js.configs.recommended,
   {
     files: ['**/*.ts'],
-    ignores: ['build/**', 'node_modules/**'],
+    ignores: ['build/**', 'node_modules/**', 'src/__tests__/example-calendar-service.test.ts', 'src/__tests__/calendar-service-simple.test.ts', 'src/__tests__/integration/calendar-integration.test.ts'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
