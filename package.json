@@ -9,7 +9,8 @@
   "scripts": {
     "build": "tsc --skipLibCheck && chmod 755 build/index.js",
     "start": "node build/index.js",
-    "dev": "ts-node --esm src/index.ts",
+    "dev": "tsc --skipLibCheck && node build/index.js",
+    "dev:watch": "tsc --skipLibCheck --watch",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "lint": "eslint ./src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
@@ -20,8 +21,7 @@
   "lint-staged": {
     "*.{ts,tsx}": [
       "prettier --write",
-      "eslint --fix",
-      "tsc --noEmit --skipLibCheck"
+      "eslint --fix"
     ]
   },
   "keywords": [
@@ -60,6 +60,7 @@
     "husky": "^9.1.7",
     "jest": "^29.7.0",
     "lint-staged": "^15.5.1",
+    "nodemon": "^3.1.10",
     "prettier": "^3.5.3",
     "ts-jest": "^29.3.2"
   }

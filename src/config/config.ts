@@ -8,6 +8,7 @@ export interface ServerConfig {
   serverName: string;
   serverVersion: string;
   environment: string;
+  keepAliveInterval: number; // Added keep-alive interval
 }
 
 export interface NextcloudConfig {
@@ -21,6 +22,7 @@ const defaultConfig: ServerConfig = {
   serverName: 'nextcloud-calendar-server',
   serverVersion: '1.0.0',
   environment: 'development',
+  keepAliveInterval: 30000, // Default: 30 seconds
 };
 
 export function loadConfig(): { server: ServerConfig; nextcloud: NextcloudConfig } {
@@ -43,6 +45,9 @@ export function loadConfig(): { server: ServerConfig; nextcloud: NextcloudConfig
       serverName: process.env.SERVER_NAME || defaultConfig.serverName,
       serverVersion: process.env.SERVER_VERSION || defaultConfig.serverVersion,
       environment: process.env.NODE_ENV || defaultConfig.environment,
+      keepAliveInterval: process.env.KEEP_ALIVE_INTERVAL
+        ? parseInt(process.env.KEEP_ALIVE_INTERVAL)
+        : defaultConfig.keepAliveInterval,
     },
     nextcloud: {
       baseUrl: process.env.NEXTCLOUD_BASE_URL || '',
