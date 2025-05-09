@@ -86,12 +86,13 @@ if (calendarService) {
       };
     } catch (error) {
       console.error('Error in listCalendars tool:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
       return {
         isError: true,
         content: [
           {
             type: 'text',
-            text: 'Failed to retrieve calendars. Please try again later.',
+            text: errorMessage,
           },
         ],
       };
@@ -138,12 +139,13 @@ if (calendarService) {
         };
       } catch (error) {
         console.error('Error in createCalendar tool:', error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
         return {
           isError: true,
           content: [
             {
               type: 'text',
-              text: 'Failed to create calendar. Please try again later.',
+              text: errorMessage,
             },
           ],
         };
@@ -187,12 +189,13 @@ if (calendarService) {
         };
       } catch (error) {
         console.error('Error in updateCalendar tool:', error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
         return {
           isError: true,
           content: [
             {
               type: 'text',
-              text: 'Failed to update calendar. Please try again later.',
+              text: errorMessage,
             },
           ],
         };
@@ -219,12 +222,13 @@ if (calendarService) {
         };
       } catch (error) {
         console.error('Error in deleteCalendar tool:', error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
         return {
           isError: true,
           content: [
             {
               type: 'text',
-              text: 'Failed to delete calendar. Please try again later.',
+              text: errorMessage,
             },
           ],
         };
