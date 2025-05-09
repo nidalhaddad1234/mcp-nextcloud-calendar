@@ -14,7 +14,7 @@ import * as os from 'node:os';
 const validation = validateEnvironmentVariables();
 if (validation.missing.length > 0) {
   console.warn('Some environment variables are missing:');
-  validation.missing.forEach(variable => {
+  validation.missing.forEach((variable) => {
     console.warn(`  - ${variable}`);
   });
 }
@@ -55,11 +55,14 @@ if (validation.calendarReady) {
   console.warn(
     'Calendar service not initialized due to missing environment variables:',
     ['NEXTCLOUD_BASE_URL', 'NEXTCLOUD_USERNAME', 'NEXTCLOUD_APP_TOKEN']
-      .filter(varName => !process.env[varName])
-      .join(', ')
+      .filter((varName) => !process.env[varName])
+      .join(', '),
   );
   console.warn('Calendar-related functionality will not be available');
 }
+
+// Import zod for parameter validation
+import { z } from 'zod';
 
 // Create MCP server
 const server = new McpServer({
@@ -70,42 +73,45 @@ const server = new McpServer({
 // Register calendar tools if calendar service is available
 if (calendarService) {
   // List calendars tool
-  server.registerTool({
-    name: 'listCalendars',
-    description: 'Get a list of all available calendars',
-    execute: async () => {
-      try {
-        const calendars = await calendarService.getCalendars();
-        return { success: true, calendars };
-      } catch (error) {
-        console.error('Error in listCalendars tool:', error);
-        return {
-          success: false,
-          error: 'Failed to retrieve calendars. Please try again later.'
-        };
-      }
+  server.tool('listCalendars', {}, async () => {
+    try {
+      const calendars = await calendarService.getCalendars();
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ success: true, calendars }, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      console.error('Error in listCalendars tool:', error);
+      return {
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: 'Failed to retrieve calendars. Please try again later.',
+          },
+        ],
+      };
     }
   });
 
   // Create calendar tool
-  server.registerTool({
-    name: 'createCalendar',
-    description: 'Create a new calendar',
-    parameters: {
-      displayName: { type: 'string', description: 'The display name for the calendar' },
-      color: { type: 'string', description: 'The color for the calendar (hex format)', required: false },
-      category: { type: 'string', description: 'Visual category or tag for ADHD-friendly organization', required: false },
-      focusPriority: { type: 'number', description: 'Priority level for ADHD focus management (1-10)', required: false }
+  server.tool(
+    'createCalendar',
+    {
+      displayName: z.string(),
+      color: z.string().optional(),
+      category: z.string().optional(),
+      focusPriority: z.number().optional(),
     },
-    execute: async (params: Record<string, unknown>) => {
+    async ({ displayName, color, category, focusPriority }) => {
       try {
-        if (!params.displayName) {
-          return { success: false, error: 'Calendar display name is required' };
-        }
-
         const newCalendar = {
-          displayName: String(params.displayName),
-          color: params.color ? String(params.color) : '#0082c9',
+          displayName,
+          color: color || '#0082c9',
           owner: '', // Will be assigned by service
           isDefault: false,
           isShared: false,
@@ -114,89 +120,117 @@ if (calendarService) {
             canRead: true,
             canWrite: true,
             canShare: true,
-            canDelete: true
+            canDelete: true,
           },
-          category: params.category ? String(params.category) : undefined,
-          focusPriority: params.focusPriority ? Number(params.focusPriority) : undefined,
-          metadata: null
+          category,
+          focusPriority,
+          metadata: null,
         };
 
         const calendar = await calendarService.createCalendar(newCalendar);
-        return { success: true, calendar };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ success: true, calendar }, null, 2),
+            },
+          ],
+        };
       } catch (error) {
         console.error('Error in createCalendar tool:', error);
         return {
-          success: false,
-          error: 'Failed to create calendar. Please try again later.'
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: 'Failed to create calendar. Please try again later.',
+            },
+          ],
         };
       }
-    }
-  });
+    },
+  );
 
   // Update calendar tool
-  server.registerTool({
-    name: 'updateCalendar',
-    description: 'Update an existing calendar',
-    parameters: {
-      id: { type: 'string', description: 'The ID of the calendar to update' },
-      displayName: { type: 'string', description: 'The new display name for the calendar', required: false },
-      color: { type: 'string', description: 'The new color for the calendar (hex format)', required: false },
-      category: { type: 'string', description: 'Visual category or tag for ADHD-friendly organization', required: false },
-      focusPriority: { type: 'number', description: 'Priority level for ADHD focus management (1-10)', required: false }
+  server.tool(
+    'updateCalendar',
+    {
+      id: z.string(),
+      displayName: z.string().optional(),
+      color: z.string().optional(),
+      category: z.string().optional(),
+      focusPriority: z.number().optional(),
     },
-    execute: async (params: Record<string, unknown>) => {
+    async ({ id, displayName, color, category, focusPriority }) => {
       try {
-        if (!params.id) {
-          return { success: false, error: 'Calendar ID is required' };
-        }
-
-        const id = String(params.id);
         const updates: Record<string, unknown> = {};
-        if (params.displayName !== undefined) updates.displayName = String(params.displayName);
-        if (params.color !== undefined) updates.color = String(params.color);
-        if (params.category !== undefined) updates.category = String(params.category);
-        if (params.focusPriority !== undefined) updates.focusPriority = Number(params.focusPriority);
+        if (displayName !== undefined) updates.displayName = displayName;
+        if (color !== undefined) updates.color = color;
+        if (category !== undefined) updates.category = category;
+        if (focusPriority !== undefined) updates.focusPriority = focusPriority;
 
         if (Object.keys(updates).length === 0) {
-          return { success: false, error: 'No update parameters provided' };
+          return {
+            isError: true,
+            content: [{ type: 'text', text: 'No update parameters provided' }],
+          };
         }
 
         const calendar = await calendarService.updateCalendar(id, updates);
-        return { success: true, calendar };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ success: true, calendar }, null, 2),
+            },
+          ],
+        };
       } catch (error) {
         console.error('Error in updateCalendar tool:', error);
         return {
-          success: false,
-          error: 'Failed to update calendar. Please try again later.'
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: 'Failed to update calendar. Please try again later.',
+            },
+          ],
         };
       }
-    }
-  });
+    },
+  );
 
   // Delete calendar tool
-  server.registerTool({
-    name: 'deleteCalendar',
-    description: 'Delete an existing calendar',
-    parameters: {
-      id: { type: 'string', description: 'The ID of the calendar to delete' }
+  server.tool(
+    'deleteCalendar',
+    {
+      id: z.string(),
     },
-    execute: async (params: Record<string, unknown>) => {
+    async ({ id }) => {
       try {
-        if (!params.id) {
-          return { success: false, error: 'Calendar ID is required' };
-        }
-
-        const result = await calendarService.deleteCalendar(String(params.id));
-        return { success: result };
+        const result = await calendarService.deleteCalendar(id);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ success: result }, null, 2),
+            },
+          ],
+        };
       } catch (error) {
         console.error('Error in deleteCalendar tool:', error);
         return {
-          success: false,
-          error: 'Failed to delete calendar. Please try again later.'
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: 'Failed to delete calendar. Please try again later.',
+            },
+          ],
         };
       }
-    }
-  });
+    },
+  );
 }
 
 // Setup Express app
