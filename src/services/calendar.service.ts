@@ -3,23 +3,7 @@ import { parseStringPromise } from 'xml2js';
 import { NextcloudConfig } from '../config/config.js';
 import { Calendar, CalendarUtils } from '../models/index.js';
 import { createLogger } from './logger.js';
-
-/**
- * Escapes special characters in a string to make it safe for XML
- * @param input The string to escape
- * @returns The escaped string
- */
-function escapeXml(input: string | null | undefined): string {
-  if (input === null || input === undefined) {
-    return '';
-  }
-  return String(input)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
+import { escapeXml, createXmlElement } from '../utils/index.js';
 
 export class CalendarService {
   private config: NextcloudConfig;
@@ -188,7 +172,9 @@ export class CalendarService {
 
     // Find successful propstat
     const propstat = Array.isArray(response['d:propstat'])
-      ? response['d:propstat'].find((ps: { 'd:status'?: string }) => ps['d:status'] === 'HTTP/1.1 200 OK')
+      ? response['d:propstat'].find(
+          (ps: { 'd:status'?: string }) => ps['d:status'] === 'HTTP/1.1 200 OK',
+        )
       : response['d:propstat'];
 
     if (!propstat || !propstat['d:prop']) {
@@ -232,13 +218,13 @@ export class CalendarService {
         canRead: privileges.canRead,
         canWrite: privileges.canWrite,
         canShare: privileges.canShare,
-        canDelete: privileges.canDelete
+        canDelete: privileges.canDelete,
       },
       url: `${this.baseUrl}${response['d:href']}`,
       // For ADHD-friendly organization
       category: null,
       focusPriority: null,
-      metadata: null
+      metadata: null,
     });
   }
 
@@ -253,11 +239,11 @@ export class CalendarService {
         method: 'PROPFIND',
         url: this.caldavUrl,
         headers: {
-          'Authorization': this.authHeader,
-          'Depth': '1',
+          Authorization: this.authHeader,
+          Depth: '1',
           'Content-Type': 'application/xml; charset=utf-8',
         },
-        data: this.buildCalendarPropertiesRequest()
+        data: this.buildCalendarPropertiesRequest(),
       });
 
       // Parse XML response with more robust error handling
@@ -269,14 +255,17 @@ export class CalendarService {
           // Normalize tag names to handle different Nextcloud versions
           normalizeTags: true,
           // Make attribute names more consistent
-          normalize: true
+          normalize: true,
         });
       } catch (parseError) {
-        this.logger.warn('Initial XML parsing failed, trying with alternative options:', parseError);
+        this.logger.warn(
+          'Initial XML parsing failed, trying with alternative options:',
+          parseError,
+        );
         // Try again with different options
         xmlData = await parseStringPromise(response.data, {
           explicitArray: true,
-          normalizeTags: true
+          normalizeTags: true,
         });
       }
 
@@ -321,9 +310,7 @@ export class CalendarService {
         const responseElement = getResponses();
         if (responseElement) {
           // Handle different possible structures
-          const responses = Array.isArray(responseElement)
-            ? responseElement
-            : [responseElement];
+          const responses = Array.isArray(responseElement) ? responseElement : [responseElement];
 
           // Process each response
           for (const response of responses) {
@@ -365,30 +352,38 @@ export class CalendarService {
       }
 
       // Generate a URL-safe calendar ID from the display name
-      const calendarId = encodeURIComponent(
-        newCalendar.displayName.toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-|-$/g, '')
-      ) + '-' + Date.now().toString(36);
+      const calendarId =
+        encodeURIComponent(
+          newCalendar.displayName
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, ''),
+        ) +
+        '-' +
+        Date.now().toString(36);
 
       // Calendar URL to create
       const calendarUrl = this.caldavUrl + calendarId + '/';
 
-      // Build XML for calendar properties - escape all user input
-      const safeDisplayName = escapeXml(newCalendar.displayName);
-      const safeColor = escapeXml(newCalendar.color || '#0082c9');
-      const safeCategory = newCalendar.category ? escapeXml(newCalendar.category) : '';
-      const safeFocusPriority = newCalendar.focusPriority ? escapeXml(String(newCalendar.focusPriority)) : '';
+      // Build XML for calendar properties - use helper function to properly escape input
+      const displayNameEl = createXmlElement('x0:displayname', newCalendar.displayName);
+      const colorEl = createXmlElement('x1:calendar-color', newCalendar.color || '#0082c9');
+      const categoryEl = newCalendar.category
+        ? createXmlElement('x2:calendar-category', newCalendar.category)
+        : '';
+      const focusPriorityEl = newCalendar.focusPriority
+        ? createXmlElement('x2:calendar-focus-priority', String(newCalendar.focusPriority))
+        : '';
 
       const proppatchXml = `<?xml version="1.0" encoding="UTF-8"?>
         <x0:propertyupdate xmlns:x0="DAV:" xmlns:x1="http://apple.com/ns/ical/"
                           xmlns:x2="http://owncloud.org/ns" xmlns:x3="http://calendarserver.org/ns/">
           <x0:set>
             <x0:prop>
-              <x0:displayname>${safeDisplayName}</x0:displayname>
-              <x1:calendar-color>${safeColor}</x1:calendar-color>
-              ${safeCategory ? `<x2:calendar-category>${safeCategory}</x2:calendar-category>` : ''}
-              ${safeFocusPriority ? `<x2:calendar-focus-priority>${safeFocusPriority}</x2:calendar-focus-priority>` : ''}
+              ${displayNameEl}
+              ${colorEl}
+              ${categoryEl}
+              ${focusPriorityEl}
             </x0:prop>
           </x0:set>
         </x0:propertyupdate>`;
@@ -399,17 +394,17 @@ export class CalendarService {
         method: 'MKCALENDAR',
         url: calendarUrl,
         headers: {
-          'Authorization': this.authHeader,
-          'Content-Type': 'application/xml; charset=utf-8'
+          Authorization: this.authHeader,
+          'Content-Type': 'application/xml; charset=utf-8',
         },
         data: `<?xml version="1.0" encoding="UTF-8"?>
           <x0:mkcalendar xmlns:x0="urn:ietf:params:xml:ns:caldav">
             <x0:set>
               <x0:prop>
-                <x0:displayname>${safeDisplayName}</x0:displayname>
+                ${createXmlElement('x0:displayname', newCalendar.displayName)}
               </x0:prop>
             </x0:set>
-          </x0:mkcalendar>`
+          </x0:mkcalendar>`,
       });
       this.logger.debug('MKCALENDAR request successful');
 
@@ -419,10 +414,10 @@ export class CalendarService {
         method: 'PROPPATCH',
         url: calendarUrl,
         headers: {
-          'Authorization': this.authHeader,
-          'Content-Type': 'application/xml; charset=utf-8'
+          Authorization: this.authHeader,
+          'Content-Type': 'application/xml; charset=utf-8',
         },
-        data: proppatchXml
+        data: proppatchXml,
       });
       this.logger.debug('PROPPATCH request successful');
 
@@ -440,12 +435,12 @@ export class CalendarService {
           canRead: true,
           canWrite: true,
           canShare: true,
-          canDelete: true
+          canDelete: true,
         },
         url: calendarUrl,
         category: newCalendar.category,
         focusPriority: newCalendar.focusPriority,
-        metadata: newCalendar.metadata
+        metadata: newCalendar.metadata,
       });
 
       this.logger.info(`Calendar created successfully: ${calendarId} (${newCalendar.displayName})`);
@@ -486,7 +481,7 @@ export class CalendarService {
       // First, verify the calendar exists by trying to get it
       this.logger.debug(`Fetching existing calendar: ${calendarId}`);
       const calendars = await this.getCalendars();
-      const existingCalendar = calendars.find(cal => cal.id === calendarId);
+      const existingCalendar = calendars.find((cal) => cal.id === calendarId);
 
       if (!existingCalendar) {
         this.logger.warn(`Attempted to update non-existent calendar: ${calendarId}`);
@@ -495,7 +490,9 @@ export class CalendarService {
 
       // Check if user has write permissions
       if (existingCalendar.isReadOnly || !existingCalendar.permissions.canWrite) {
-        this.logger.warn(`Permission denied when updating calendar ${calendarId} - isReadOnly: ${existingCalendar.isReadOnly}, canWrite: ${existingCalendar.permissions.canWrite}`);
+        this.logger.warn(
+          `Permission denied when updating calendar ${calendarId} - isReadOnly: ${existingCalendar.isReadOnly}, canWrite: ${existingCalendar.permissions.canWrite}`,
+        );
         throw new Error('You do not have permission to modify this calendar');
       }
 
@@ -505,23 +502,23 @@ export class CalendarService {
       const calendarUrl = this.caldavUrl + calendarId + '/';
 
       // Build XML property update document - only include properties that are being updated
-      // Escape all user input to prevent XML injection
+      // Use XML utility to properly escape all user input and prevent XML injection
       let propXml = '';
 
       if (updates.displayName !== undefined) {
-        propXml += `<x0:displayname>${escapeXml(updates.displayName)}</x0:displayname>`;
+        propXml += createXmlElement('x0:displayname', updates.displayName);
       }
 
       if (updates.color !== undefined) {
-        propXml += `<x1:calendar-color>${escapeXml(updates.color)}</x1:calendar-color>`;
+        propXml += createXmlElement('x1:calendar-color', updates.color);
       }
 
       if (updates.category !== undefined) {
-        propXml += `<x2:calendar-category>${escapeXml(updates.category)}</x2:calendar-category>`;
+        propXml += createXmlElement('x2:calendar-category', updates.category);
       }
 
       if (updates.focusPriority !== undefined) {
-        propXml += `<x2:calendar-focus-priority>${escapeXml(String(updates.focusPriority))}</x2:calendar-focus-priority>`;
+        propXml += createXmlElement('x2:calendar-focus-priority', String(updates.focusPriority));
       }
 
       // Only send PROPPATCH if there are properties to update
@@ -541,10 +538,10 @@ export class CalendarService {
           method: 'PROPPATCH',
           url: calendarUrl,
           headers: {
-            'Authorization': this.authHeader,
-            'Content-Type': 'application/xml; charset=utf-8'
+            Authorization: this.authHeader,
+            'Content-Type': 'application/xml; charset=utf-8',
           },
-          data: proppatchXml
+          data: proppatchXml,
         });
         this.logger.debug('PROPPATCH request for calendar update successful');
       }
@@ -561,10 +558,12 @@ export class CalendarService {
         isDefault: existingCalendar.isDefault,
         isShared: existingCalendar.isShared,
         isReadOnly: existingCalendar.isReadOnly,
-        permissions: existingCalendar.permissions
+        permissions: existingCalendar.permissions,
       });
 
-      this.logger.info(`Calendar updated successfully: ${calendarId} (${updatedCalendar.displayName})`);
+      this.logger.info(
+        `Calendar updated successfully: ${calendarId} (${updatedCalendar.displayName})`,
+      );
       return updatedCalendar;
     } catch (error) {
       // Check for specific error types
@@ -599,16 +598,18 @@ export class CalendarService {
       // First, verify the calendar exists and check permissions
       this.logger.debug(`Verifying calendar ${calendarId} exists and checking permissions`);
       const calendars = await this.getCalendars();
-      const calendar = calendars.find(cal => cal.id === calendarId);
+      const calendar = calendars.find((cal) => cal.id === calendarId);
 
       if (!calendar) {
         this.logger.warn(`Attempted to delete non-existent calendar: ${calendarId}`);
-        throw new Error(`Calendar with ID ${calendarId} not found`);
+        throw new Error(`Calendar with ID ${escapeXml(calendarId)} not found`);
       }
 
       // Check if user has delete permissions
       if (!calendar.permissions.canDelete) {
-        this.logger.warn(`Permission denied when deleting calendar ${calendarId} - canDelete: ${calendar.permissions.canDelete}`);
+        this.logger.warn(
+          `Permission denied when deleting calendar ${calendarId} - canDelete: ${calendar.permissions.canDelete}`,
+        );
         throw new Error('You do not have permission to delete this calendar');
       }
 
@@ -629,8 +630,8 @@ export class CalendarService {
         method: 'DELETE',
         url: calendarUrl,
         headers: {
-          'Authorization': this.authHeader
-        }
+          Authorization: this.authHeader,
+        },
       });
 
       this.logger.info(`Calendar ${calendarId} deleted successfully`);
@@ -648,7 +649,9 @@ export class CalendarService {
         } else if (status === 423) {
           throw new Error('Calendar is locked and cannot be deleted.');
         } else if (status === 409) {
-          throw new Error('Calendar cannot be deleted because it contains events. Delete all events first.');
+          throw new Error(
+            'Calendar cannot be deleted because it contains events. Delete all events first.',
+          );
         }
       }
 
@@ -661,57 +664,55 @@ export class CalendarService {
   /**
    * Helper function to parse WebDAV privilege set into permission object
    */
-  private parsePrivilegeSet(privilegeSet: Record<string, unknown> | null): { 
-    canRead: boolean; 
-    canWrite: boolean; 
-    canShare: boolean; 
-    canDelete: boolean; 
+  private parsePrivilegeSet(privilegeSet: Record<string, unknown> | null): {
+    canRead: boolean;
+    canWrite: boolean;
+    canShare: boolean;
+    canDelete: boolean;
   } {
     const permissions = {
       canRead: false,
       canWrite: false,
       canShare: false,
-      canDelete: false
+      canDelete: false,
     };
-    
+
     // If no privilege set provided, default to read-only access
     if (!privilegeSet) {
       permissions.canRead = true;
       return permissions;
     }
-    
+
     // If no privileges found, assume read access
     if (!privilegeSet['d:privilege']) {
       permissions.canRead = true;
       return permissions;
     }
-    
-    const privileges = Array.isArray(privilegeSet['d:privilege']) 
-      ? privilegeSet['d:privilege'] 
+
+    const privileges = Array.isArray(privilegeSet['d:privilege'])
+      ? privilegeSet['d:privilege']
       : [privilegeSet['d:privilege']];
-      
+
     // For Nextcloud, assume we have read access if we can see the calendar at all
     permissions.canRead = true;
-    
+
     for (const privilege of privileges) {
       // Write permissions
-      if (privilege['d:write'] || 
-          privilege['d:write-content'] || 
-          privilege['d:write-properties']) {
+      if (privilege['d:write'] || privilege['d:write-content'] || privilege['d:write-properties']) {
         permissions.canWrite = true;
       }
-      
+
       // Share permission (Nextcloud specific)
       if (privilege['d:share'] || privilege['oc:share']) {
         permissions.canShare = true;
       }
-      
+
       // Delete permission
       if (privilege['d:unbind'] || privilege['d:write']) {
         permissions.canDelete = true;
       }
     }
-    
+
     return permissions;
   }
 }
