@@ -4,8 +4,8 @@
 import { NextcloudConfig } from '../../config/config.js';
 import { Event } from '../../models/index.js';
 import { createLogger } from '../logger.js';
+import { XmlService, CalDavXmlBuilder } from '../xml/index.js';
 import { CalendarHttpClient, CalDavError } from './http-client.js';
-import * as XmlUtils from './xml-utils.js';
 import * as iCalUtils from './ical-utils.js';
 import crypto from 'crypto';
 
@@ -13,6 +13,8 @@ export class EventService {
   private config: NextcloudConfig;
   private httpClient: CalendarHttpClient;
   private logger = createLogger('EventService');
+  private xmlService: XmlService;
+  private caldavXmlBuilder: CalDavXmlBuilder;
 
   constructor(config: NextcloudConfig) {
     this.config = config;
@@ -26,6 +28,10 @@ export class EventService {
 
     // Initialize HTTP client
     this.httpClient = new CalendarHttpClient(baseUrl, this.config.username, this.config.appToken);
+
+    // Initialize XML service
+    this.xmlService = new XmlService();
+    this.caldavXmlBuilder = new CalDavXmlBuilder(this.xmlService);
 
     // Log initialization without sensitive details
     this.logger.info('EventService initialized successfully', {
@@ -82,59 +88,47 @@ export class EventService {
       // Validate calendar ID
       this.validateCalendarId(calendarId);
 
+      // Create time range for the calendar query
+      const timeRange =
+        options?.start && options?.end ? { start: options.start, end: options.end } : undefined;
+
       // Build the REPORT request for calendar events
-      const reportXml = XmlUtils.buildEventsReportRequest(options?.start, options?.end);
+      const reportXml = this.caldavXmlBuilder.buildCalendarQueryReport(timeRange);
 
       // Send the REPORT request
       const reportResponse = await this.httpClient.calendarReport(calendarId, reportXml);
 
       // Parse the XML response
-      const xmlData = await XmlUtils.parseXmlResponse(reportResponse);
+      const xmlData = await this.xmlService.parseXml(reportResponse);
 
       // Extract events from the response
       const events: Event[] = [];
-      const multistatus = XmlUtils.getMultistatus(xmlData);
+      const calDavResponses = this.caldavXmlBuilder.parseMultistatus(xmlData);
 
-      if (multistatus) {
-        const responses = XmlUtils.getResponses(multistatus);
+      for (const response of calDavResponses) {
+        try {
+          // Get the href (event URL)
+          const href = response.href;
 
-        for (const response of responses) {
-          try {
-            // Get the href (event URL)
-            const href = response['d:href'];
-
-            if (!href) {
-              continue;
-            }
-
-            // Find successful propstat
-            const propstat = Array.isArray(response['d:propstat'])
-              ? response['d:propstat'].find(
-                  (ps: { 'd:status'?: string }) => ps['d:status'] === 'HTTP/1.1 200 OK',
-                )
-              : response['d:propstat'];
-
-            if (!propstat || !propstat['d:prop']) {
-              continue;
-            }
-
-            const prop = propstat['d:prop'];
-
-            // Get the calendar data (iCalendar format)
-            const calendarData = prop['c:calendar-data'] || prop['calendar-data'];
-
-            if (!calendarData) {
-              continue;
-            }
-
-            // Parse the iCalendar data
-            const parsedEvents = iCalUtils.parseICalEvents(calendarData.toString(), calendarId);
-
-            // Add to our list of events
-            events.push(...parsedEvents);
-          } catch (parseError) {
-            this.logger.warn('Error parsing event response:', parseError);
+          if (!href) {
+            continue;
           }
+
+          // Get calendar data from properties
+          const calendarData =
+            response.properties['c:calendar-data'] || response.properties['calendar-data'];
+
+          if (!calendarData) {
+            continue;
+          }
+
+          // Parse the iCalendar data
+          const parsedEvents = iCalUtils.parseICalEvents(calendarData.toString(), calendarId);
+
+          // Add to our list of events
+          events.push(...parsedEvents);
+        } catch (parseError) {
+          this.logger.warn('Error parsing event response:', parseError);
         }
       }
 
@@ -267,54 +261,38 @@ export class EventService {
       }
 
       // Second approach: Use REPORT with UID filter
-      const reportXml = XmlUtils.buildEventByUidRequest(eventId);
+      const reportXml = this.caldavXmlBuilder.buildEventByUidRequest(eventId);
 
       // Send the REPORT request
       const reportResponse = await this.httpClient.calendarReport(calendarId, reportXml);
 
       // Parse the XML response
-      const xmlData = await XmlUtils.parseXmlResponse(reportResponse);
+      const xmlData = await this.xmlService.parseXml(reportResponse);
 
       // Extract the event from the response
-      const multistatus = XmlUtils.getMultistatus(xmlData);
+      const calDavResponses = this.caldavXmlBuilder.parseMultistatus(xmlData);
 
-      if (multistatus) {
-        const responses = XmlUtils.getResponses(multistatus);
+      for (const response of calDavResponses) {
+        try {
+          // Get calendar data from properties
+          const calendarData =
+            response.properties['c:calendar-data'] || response.properties['calendar-data'];
 
-        for (const response of responses) {
-          try {
-            // Find successful propstat
-            const propstat = Array.isArray(response['d:propstat'])
-              ? response['d:propstat'].find(
-                  (ps: { 'd:status'?: string }) => ps['d:status'] === 'HTTP/1.1 200 OK',
-                )
-              : response['d:propstat'];
-
-            if (!propstat || !propstat['d:prop']) {
-              continue;
-            }
-
-            const prop = propstat['d:prop'];
-
-            // Get the calendar data (iCalendar format)
-            const calendarData = prop['c:calendar-data'] || prop['calendar-data'];
-
-            if (!calendarData) {
-              continue;
-            }
-
-            // Parse the iCalendar data
-            const events = iCalUtils.parseICalEvents(calendarData.toString(), calendarId);
-
-            // Find the event with the matching ID
-            const event = events.find((e) => e.id === eventId);
-
-            if (event) {
-              return event;
-            }
-          } catch (parseError) {
-            this.logger.warn('Error parsing event response:', parseError);
+          if (!calendarData) {
+            continue;
           }
+
+          // Parse the iCalendar data
+          const events = iCalUtils.parseICalEvents(calendarData.toString(), calendarId);
+
+          // Find the event with the matching ID
+          const event = events.find((e) => e.id === eventId);
+
+          if (event) {
+            return event;
+          }
+        } catch (parseError) {
+          this.logger.warn('Error parsing event response:', parseError);
         }
       }
 
@@ -526,52 +504,40 @@ export class EventService {
     );
 
     // Build the XML request for expanding recurring events
-    const expandXml = XmlUtils.buildExpandRecurringEventsRequest(eventUrls, startDate, endDate);
+    const expandXml = this.caldavXmlBuilder.buildExpandRecurringEventsRequest(
+      eventUrls,
+      startDate,
+      endDate,
+    );
 
     try {
       // Send the REPORT request
       const reportResponse = await this.httpClient.calendarReport(calendarId, expandXml);
 
       // Parse the XML response
-      const xmlData = await XmlUtils.parseXmlResponse(reportResponse);
+      const xmlData = await this.xmlService.parseXml(reportResponse);
 
       // Extract expanded events from the response
       const expandedEvents: Event[] = [];
-      const multistatus = XmlUtils.getMultistatus(xmlData);
+      const calDavResponses = this.caldavXmlBuilder.parseMultistatus(xmlData);
 
-      if (multistatus) {
-        const responses = XmlUtils.getResponses(multistatus);
+      for (const response of calDavResponses) {
+        try {
+          // Get calendar data from properties
+          const calendarData =
+            response.properties['c:calendar-data'] || response.properties['calendar-data'];
 
-        for (const response of responses) {
-          try {
-            // Find successful propstat
-            const propstat = Array.isArray(response['d:propstat'])
-              ? response['d:propstat'].find(
-                  (ps: { 'd:status'?: string }) => ps['d:status'] === 'HTTP/1.1 200 OK',
-                )
-              : response['d:propstat'];
-
-            if (!propstat || !propstat['d:prop']) {
-              continue;
-            }
-
-            const prop = propstat['d:prop'];
-
-            // Get the calendar data (iCalendar format)
-            const calendarData = prop['c:calendar-data'] || prop['calendar-data'];
-
-            if (!calendarData) {
-              continue;
-            }
-
-            // Parse the iCalendar data to get expanded instances
-            const parsedEvents = iCalUtils.parseICalEvents(calendarData.toString(), calendarId);
-
-            // Add to our list of expanded events
-            expandedEvents.push(...parsedEvents);
-          } catch (parseError) {
-            this.logger.warn('Error parsing expanded event response:', parseError);
+          if (!calendarData) {
+            continue;
           }
+
+          // Parse the iCalendar data to get expanded instances
+          const parsedEvents = iCalUtils.parseICalEvents(calendarData.toString(), calendarId);
+
+          // Add to our list of expanded events
+          expandedEvents.push(...parsedEvents);
+        } catch (parseError) {
+          this.logger.warn('Error parsing expanded event response:', parseError);
         }
       }
 
