@@ -1,4 +1,7 @@
-import { Request, Response, RequestHandler } from 'express';
+import express from 'express';
+type Request = express.Request;
+type Response = express.Response;
+type RequestHandler = express.RequestHandler;
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { v4 as uuidv4 } from 'uuid';

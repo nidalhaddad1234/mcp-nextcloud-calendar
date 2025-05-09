@@ -1,4 +1,7 @@
-import { Request, Response, NextFunction } from 'express';
+import express from 'express';
+type Request = express.Request;
+type Response = express.Response;
+type NextFunction = express.NextFunction;
 import { CalendarService } from '../services/index.js';
 
 export function getCalendarsHandler(calendarService: CalendarService | null) {
@@ -9,11 +12,12 @@ export function getCalendarsHandler(calendarService: CalendarService | null) {
       return;
     }
 
-    calendarService.getCalendars()
-      .then(calendars => {
+    calendarService
+      .getCalendars()
+      .then((calendars) => {
         res.status(200).json({ calendars });
       })
-      .catch(error => {
+      .catch((error) => {
         console.error('Error getting calendars:', error);
         res.status(500).json({ error: `Failed to get calendars: ${(error as Error).message}` });
       });
