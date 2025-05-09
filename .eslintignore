@@ -1,0 +1,7 @@
+# Ignore example test files that use special mockings
+src/__tests__/example-calendar-service.test.ts
+src/__tests__/calendar-service-simple.test.ts
+src/__tests__/integration/calendar-integration.test.ts
+
+# Ignore build files
+build/

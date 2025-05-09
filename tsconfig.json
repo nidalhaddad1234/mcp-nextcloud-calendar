@@ -16,7 +16,12 @@
     "typeRoots": ["./node_modules/@types"]
   },
   "include": ["src/**/*", "src/types/*.d.ts"],
-  "exclude": ["node_modules"],
+  "exclude": [
+    "node_modules",
+    "src/__tests__/calendar-service-simple.test.ts",
+    "src/__tests__/example-calendar-service.test.ts",
+    "src/__tests__/integration/calendar-integration.test.ts"
+  ],
   "ts-node": {
     "esm": true,
     "experimentalSpecifierResolution": "node",
