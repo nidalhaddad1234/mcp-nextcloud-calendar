@@ -7,7 +7,7 @@ import { loadConfig, validateEnvironmentVariables } from './config/config.js';
 import { healthHandler } from './handlers/health.js';
 import { setupMcpTransport } from './handlers/mcp-transport.js';
 import { getCalendarsHandler, sanitizeError } from './handlers/calendars.js';
-import { CalendarService } from './services/index.js';
+import { CalendarService, EventService } from './services/index.js';
 import * as os from 'node:os';
 
 /**
@@ -65,6 +65,7 @@ if (!validation.calendarReady) {
 
 // Initialize services
 let calendarService: CalendarService | null = null;
+let eventService: EventService | null = null;
 
 // Only try to initialize calendar service if all required environment variables are available
 if (validation.calendarReady) {
@@ -74,9 +75,19 @@ if (validation.calendarReady) {
   } catch (error) {
     console.error('Failed to initialize calendar service:', error);
   }
+
+  try {
+    if (calendarService) {
+      eventService = new EventService(nextcloudConfig);
+      console.log('Event service initialized successfully');
+    }
+  } catch (error) {
+    console.error('Failed to initialize event service:', error);
+    eventService = null;
+  }
 } else {
   console.warn(
-    'Calendar service not initialized due to missing environment variables:',
+    'Calendar services not initialized due to missing environment variables:',
     ['NEXTCLOUD_BASE_URL', 'NEXTCLOUD_USERNAME', 'NEXTCLOUD_APP_TOKEN']
       .filter((varName) => !process.env[varName])
       .join(', '),
@@ -175,10 +186,7 @@ if (calendarService) {
         if (focusPriority !== undefined) updates.focusPriority = focusPriority;
 
         if (Object.keys(updates).length === 0) {
-          return {
-            isError: true,
-            content: [{ type: 'text', text: 'No update parameters provided' }],
-          };
+          throw new Error('No update parameters provided');
         }
 
         const calendar = await calendarService.updateCalendar(id, updates);
@@ -218,6 +226,12 @@ if (calendarService) {
       }
     },
   );
+}
+
+// Register event tools
+import { registerEventTools } from './handlers/event-tools.js';
+if (eventService) {
+  registerEventTools(server, eventService);
 }
 
 // Setup Express app
