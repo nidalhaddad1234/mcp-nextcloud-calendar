@@ -6,9 +6,32 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { loadConfig, validateEnvironmentVariables } from './config/config.js';
 import { healthHandler } from './handlers/health.js';
 import { setupMcpTransport } from './handlers/mcp-transport.js';
-import { getCalendarsHandler } from './handlers/calendars.js';
+import { getCalendarsHandler, sanitizeError } from './handlers/calendars.js';
 import { CalendarService } from './services/index.js';
 import * as os from 'node:os';
+
+/**
+ * Utility function to handle and sanitize errors for MCP calendar tools
+ * @param operation The calendar operation being performed (e.g., 'retrieve calendars')
+ * @param error The original error
+ * @returns A formatted MCP tool error response
+ */
+export function handleCalendarToolError(operation: string, error: unknown) {
+  console.error(`Error in ${operation} tool:`, error);
+
+  // Sanitize error message to avoid exposing sensitive details
+  const { message: sanitizedMessage } = sanitizeError(error);
+
+  return {
+    isError: true,
+    content: [
+      {
+        type: 'text',
+        text: `Failed to ${operation}: ${sanitizedMessage}`,
+      },
+    ],
+  };
+}
 
 // Validate environment variables
 const validation = validateEnvironmentVariables();
@@ -85,16 +108,7 @@ if (calendarService) {
         ],
       };
     } catch (error) {
-      console.error('Error in listCalendars tool:', error);
-      return {
-        isError: true,
-        content: [
-          {
-            type: 'text',
-            text: 'Failed to retrieve calendars. Please try again later.',
-          },
-        ],
-      };
+      return handleCalendarToolError('retrieve calendars', error);
     }
   });
 
@@ -137,16 +151,7 @@ if (calendarService) {
           ],
         };
       } catch (error) {
-        console.error('Error in createCalendar tool:', error);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: 'Failed to create calendar. Please try again later.',
-            },
-          ],
-        };
+        return handleCalendarToolError('create calendar', error);
       }
     },
   );
@@ -186,16 +191,7 @@ if (calendarService) {
           ],
         };
       } catch (error) {
-        console.error('Error in updateCalendar tool:', error);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: 'Failed to update calendar. Please try again later.',
-            },
-          ],
-        };
+        return handleCalendarToolError('update calendar', error);
       }
     },
   );
@@ -218,16 +214,7 @@ if (calendarService) {
           ],
         };
       } catch (error) {
-        console.error('Error in deleteCalendar tool:', error);
-        return {
-          isError: true,
-          content: [
-            {
-              type: 'text',
-              text: 'Failed to delete calendar. Please try again later.',
-            },
-          ],
-        };
+        return handleCalendarToolError('delete calendar', error);
       }
     },
   );
@@ -293,44 +280,53 @@ function getServerIpAddresses(): string[] {
   return results.length ? results : ['localhost'];
 }
 
-// Start the server
-app.listen(serverConfig.port, () => {
-  const ipAddresses = getServerIpAddresses();
-  const serverName = serverConfig.serverName;
-  const serverVersion = serverConfig.serverVersion;
+// For testing environments, we'll optionally avoid starting the server
+let httpServer: ReturnType<typeof app.listen> | null = null;
 
-  console.log('='.repeat(80));
-  console.log(`Nextcloud Calendar MCP Server v${serverVersion}`);
-  console.log('='.repeat(80));
+// Only start the server if we're not in a test environment or if the test explicitly wants a server
+if (process.env.NODE_ENV !== 'test') {
+  // Start the server
+  httpServer = app.listen(serverConfig.port, () => {
+    const ipAddresses = getServerIpAddresses();
+    const serverName = serverConfig.serverName;
+    const serverVersion = serverConfig.serverVersion;
 
-  console.log(`\nEnvironment: ${serverConfig.environment}`);
-  console.log(`Server name: ${serverName}`);
+    console.log('='.repeat(80));
+    console.log(`Nextcloud Calendar MCP Server v${serverVersion}`);
+    console.log('='.repeat(80));
 
-  console.log('\nEndpoints available:');
-  console.log('-------------------');
+    console.log(`\nEnvironment: ${serverConfig.environment}`);
+    console.log(`Server name: ${serverName}`);
 
-  // Display MCP endpoint information for each IP address
-  ipAddresses.forEach((ip) => {
-    console.log(`MCP Streamable HTTP: http://${ip}:${serverConfig.port}/mcp`);
-    console.log(`  - Supports GET (SSE streams), POST (messages), DELETE (session termination)`);
-    console.log(`  - MCP Protocol: March 2025 Specification`);
+    console.log('\nEndpoints available:');
+    console.log('-------------------');
 
-    console.log(`\nLegacy HTTP+SSE endpoints:`);
-    console.log(`  - SSE stream: http://${ip}:${serverConfig.port}/sse`);
-    console.log(`  - Messages: http://${ip}:${serverConfig.port}/messages?sessionId=X`);
-    console.log(`  - MCP Protocol: 2024-11-05 Specification (backward compatibility)`);
+    // Display MCP endpoint information for each IP address
+    ipAddresses.forEach((ip) => {
+      console.log(`MCP Streamable HTTP: http://${ip}:${serverConfig.port}/mcp`);
+      console.log(`  - Supports GET (SSE streams), POST (messages), DELETE (session termination)`);
+      console.log(`  - MCP Protocol: March 2025 Specification`);
+
+      console.log(`\nLegacy HTTP+SSE endpoints:`);
+      console.log(`  - SSE stream: http://${ip}:${serverConfig.port}/sse`);
+      console.log(`  - Messages: http://${ip}:${serverConfig.port}/messages?sessionId=X`);
+      console.log(`  - MCP Protocol: 2024-11-05 Specification (backward compatibility)`);
+    });
+
+    console.log('\nHealth check endpoint:');
+    ipAddresses.forEach((ip) => {
+      console.log(`  - http://${ip}:${serverConfig.port}/health`);
+    });
+
+    console.log('\nCalendar API endpoint:');
+    ipAddresses.forEach((ip) => {
+      console.log(`  - http://${ip}:${serverConfig.port}/api/calendars`);
+    });
+
+    console.log('\nServer is running and ready to accept connections.');
+    console.log('='.repeat(80));
   });
+}
 
-  console.log('\nHealth check endpoint:');
-  ipAddresses.forEach((ip) => {
-    console.log(`  - http://${ip}:${serverConfig.port}/health`);
-  });
-
-  console.log('\nCalendar API endpoint:');
-  ipAddresses.forEach((ip) => {
-    console.log(`  - http://${ip}:${serverConfig.port}/api/calendars`);
-  });
-
-  console.log('\nServer is running and ready to accept connections.');
-  console.log('='.repeat(80));
-});
+// Export for testing
+export { app, server, httpServer };
