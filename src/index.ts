@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// @ts-ignore - Handle ESM/CJS differences
 import express from 'express';
+// Using direct import with plain CommonJS import syntax for Express
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { loadConfig } from './config/config.js';
 import { healthHandler } from './handlers/health.js';
