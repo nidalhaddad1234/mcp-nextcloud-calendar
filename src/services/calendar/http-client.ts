@@ -23,6 +23,30 @@ export class CalendarHttpClient {
   }
 
   /**
+   * Fetch the ETag for a specific event
+   * @param eventUrl The full URL of the event
+   * @returns The ETag header value or null if not available
+   */
+  async getEventEtag(eventUrl: string): Promise<string | null> {
+    try {
+      logger.debug(`Making HEAD request for event at ${eventUrl} to get ETag`);
+
+      const response = await axios({
+        method: 'HEAD',
+        url: eventUrl,
+        headers: {
+          Authorization: this.authHeader,
+        },
+      });
+
+      return response.headers['etag'] || null;
+    } catch (error) {
+      logger.error(`HEAD request failed for event:`, error);
+      throw this.handleHttpError(error, 'Failed to fetch event ETag');
+    }
+  }
+
+  /**
    * Get the CalDAV URL for the user
    */
   getCalDavUrl(): string {
@@ -193,16 +217,31 @@ export class CalendarHttpClient {
   }
 
   /**
-   * Create or update an event
+   * Send an event creation or update request
    * @param calendarId The ID of the calendar
    * @param eventId The ID of the event
    * @param iCalData The event data in iCalendar format
+   * @param etag Optional ETag for concurrency control (if provided, used for update; if not, used for creation)
    * @returns True if the operation was successful
+   * @private Internal method to avoid code duplication
    */
-  async putEvent(calendarId: string, eventId: string, iCalData: string): Promise<boolean> {
+  private async sendEventRequest(
+    calendarId: string,
+    eventId: string,
+    iCalData: string,
+    etag?: string,
+  ): Promise<boolean> {
+    const eventUrl = this.caldavUrl + calendarId + '/' + eventId + '.ics';
+    const isUpdate = etag ? true : false;
+    const logAction = isUpdate ? 'update' : 'create';
+
+    logger.debug(`Making PUT request to ${logAction} event ${eventId} in calendar ${calendarId}`);
+
     try {
-      const eventUrl = this.caldavUrl + calendarId + '/' + eventId + '.ics';
-      logger.debug(`Making PUT request for event ${eventId} in calendar ${calendarId}`);
+      // Set up conditional headers based on whether this is a create or update operation
+      const conditionalHeader = isUpdate
+        ? { 'If-Match': etag } // Update existing - only if matches ETag
+        : { 'If-None-Match': '*' }; // Create new - only if doesn't exist
 
       await axios({
         method: 'PUT',
@@ -210,16 +249,27 @@ export class CalendarHttpClient {
         headers: {
           Authorization: this.authHeader,
           'Content-Type': 'text/calendar; charset=utf-8',
-          'If-None-Match': '*', // Ensure we don't overwrite an event if it exists
+          ...conditionalHeader,
         },
         data: iCalData,
       });
 
       return true;
     } catch (error) {
-      logger.error(`PUT request failed for event ${eventId}:`, error);
-      throw this.handleHttpError(error, 'Failed to save event');
+      logger.error(`PUT request failed to ${logAction} event ${eventId}:`, error);
+      throw this.handleHttpError(error, `Failed to ${logAction} event`);
     }
+  }
+
+  /**
+   * Create or update an event
+   * @param calendarId The ID of the calendar
+   * @param eventId The ID of the event
+   * @param iCalData The event data in iCalendar format
+   * @returns True if the operation was successful
+   */
+  async putEvent(calendarId: string, eventId: string, iCalData: string): Promise<boolean> {
+    return this.sendEventRequest(calendarId, eventId, iCalData);
   }
 
   /**
@@ -236,26 +286,7 @@ export class CalendarHttpClient {
     iCalData: string,
     etag: string,
   ): Promise<boolean> {
-    try {
-      const eventUrl = this.caldavUrl + calendarId + '/' + eventId + '.ics';
-      logger.debug(`Making PUT request to update event ${eventId} in calendar ${calendarId}`);
-
-      await axios({
-        method: 'PUT',
-        url: eventUrl,
-        headers: {
-          Authorization: this.authHeader,
-          'Content-Type': 'text/calendar; charset=utf-8',
-          'If-Match': etag, // Ensure we only update if the event hasn't changed
-        },
-        data: iCalData,
-      });
-
-      return true;
-    } catch (error) {
-      logger.error(`PUT request failed for updating event ${eventId}:`, error);
-      throw this.handleHttpError(error, 'Failed to update event');
-    }
+    return this.sendEventRequest(calendarId, eventId, iCalData, etag);
   }
 
   /**
@@ -303,6 +334,10 @@ export class CalendarHttpClient {
         return new Error('Operation not supported by this server.');
       } else if (status === 409) {
         return new Error('Conflict: Resource already exists or contains conflicts.');
+      } else if (status === 412) {
+        return new Error(
+          'Precondition Failed: The resource was modified by another client. Please refresh and try again.',
+        );
       } else if (status === 423) {
         return new Error('Resource is locked and cannot be modified.');
       } else if (status === 507) {

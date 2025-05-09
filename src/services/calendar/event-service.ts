@@ -1,7 +1,6 @@
 /**
  * Service for handling Nextcloud calendar events via CalDAV
  */
-import axios from 'axios';
 import { NextcloudConfig } from '../../config/config.js';
 import { Event } from '../../models/index.js';
 import { createLogger } from '../logger.js';
@@ -9,8 +8,6 @@ import { CalendarHttpClient } from './http-client.js';
 import * as XmlUtils from './xml-utils.js';
 import * as iCalUtils from './ical-utils.js';
 import crypto from 'crypto';
-// For handling the Buffer in Node.js environment
-import { Buffer } from 'buffer';
 
 export class EventService {
   private config: NextcloudConfig;
@@ -120,15 +117,31 @@ export class EventService {
       }
 
       // Handle recurring events expansion if requested
-      if (options?.expandRecurring && events.some((event) => event.recurrenceRule)) {
+      let processedEvents = events;
+      if (options?.expandRecurring && processedEvents.some((event) => event.recurrenceRule)) {
         this.logger.debug('Expanding recurring events');
 
-        // TODO: Implement recurring events expansion when needed
-        // This will involve another REPORT request with the calendar-multiget method
+        try {
+          processedEvents = await this.expandRecurringEvents(
+            processedEvents,
+            calendarId,
+            options?.start,
+            options?.end,
+          );
+        } catch (expansionError) {
+          this.logger.warn('Error expanding recurring events:', expansionError);
+          // Continue with unexpanded events if expansion fails
+        }
       }
 
       // Apply client-side filtering
-      let filteredEvents = events;
+      // TODO: For better performance with large calendars, consider implementing server-side
+      // filtering where possible by modifying the REPORT request's XML. CalDAV supports
+      // filtering by property through comp-filter and prop-filter elements. This would be
+      // particularly important for date ranges, categories, and other standard properties.
+      // Currently, we fetch all events and filter client-side, which may not be efficient
+      // for calendars with many events.
+      let filteredEvents = processedEvents;
 
       // Filter by ADHD category if specified
       if (options?.adhdCategory) {
@@ -148,11 +161,15 @@ export class EventService {
 
       // Filter by tags if specified
       if (options?.tags && options.tags.length > 0) {
-        filteredEvents = filteredEvents.filter(
-          (event) =>
-            event.categories !== undefined &&
-            options.tags?.some((tag) => event.categories?.includes(tag)),
-        );
+        filteredEvents = filteredEvents.filter((event) => {
+          // Check if categories exist before using some()
+          if (!event.categories || !Array.isArray(event.categories)) {
+            return false;
+          }
+          // Now safely check if any of the requested tags match
+          // We've already verified that event.categories exists and is an array
+          return options.tags?.some((tag) => (event.categories as string[]).includes(tag));
+        });
       }
 
       // Limit the number of results if specified
@@ -392,15 +409,9 @@ export class EventService {
       let etag = '';
 
       try {
-        // Make a HEAD request to get the ETag
-        const response = await axios.head(eventUrl, {
-          headers: {
-            // Use a different approach to create the Basic auth header
-            Authorization: `Basic ${Buffer.from(`${this.config.username}:${this.config.appToken}`).toString('base64')}`,
-          },
-        });
-
-        etag = response.headers['etag'] || '';
+        // Make a HEAD request to get the ETag using the httpClient instead of direct axios
+        const response = await this.httpClient.getEventEtag(eventUrl);
+        etag = response || '';
       } catch (etagError) {
         this.logger.warn(
           `Failed to fetch ETag for event ${eventId}, proceeding without optimistic concurrency control`,
@@ -430,7 +441,114 @@ export class EventService {
       return updatedEvent;
     } catch (error) {
       this.logger.error(`Error updating event ${eventId} in calendar ${calendarId}:`, error);
+
+      // Special handling for precondition failed errors
+      if ((error as Error).message.includes('Precondition Failed')) {
+        throw new Error(
+          `The event was modified by another user. Please refresh the event data and try again.`,
+        );
+      }
+
       throw new Error(`Failed to update event: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Expand recurring events within a date range
+   * @param events List of events to check for recurring events
+   * @param calendarId ID of the calendar containing the events
+   * @param start Optional start date for expansion
+   * @param end Optional end date for expansion
+   * @returns Promise<Event[]> List of events with recurring instances expanded
+   */
+  private async expandRecurringEvents(
+    events: Event[],
+    calendarId: string,
+    start?: Date,
+    end?: Date,
+  ): Promise<Event[]> {
+    // Default dates if not provided
+    const startDate = start || new Date();
+    const endDate = end || new Date(startDate.getTime() + 90 * 24 * 60 * 60 * 1000); // Default to 90 days ahead
+
+    this.logger.debug(
+      `Expanding recurring events from ${startDate.toISOString()} to ${endDate.toISOString()}`,
+    );
+
+    // Filter the events to find those with recurrence rules
+    const recurringEvents = events.filter((event) => event.recurrenceRule);
+
+    if (recurringEvents.length === 0) {
+      // No recurring events to expand
+      return events;
+    }
+
+    // Create a list of event URLs to fetch for the multiget request
+    const eventUrls: string[] = recurringEvents.map(
+      (event) => `${this.httpClient.getCalDavUrl()}${calendarId}/${event.id}.ics`,
+    );
+
+    // Build the XML request for expanding recurring events
+    const expandXml = XmlUtils.buildExpandRecurringEventsRequest(eventUrls, startDate, endDate);
+
+    try {
+      // Send the REPORT request
+      const reportResponse = await this.httpClient.calendarReport(calendarId, expandXml);
+
+      // Parse the XML response
+      const xmlData = await XmlUtils.parseXmlResponse(reportResponse);
+
+      // Extract expanded events from the response
+      const expandedEvents: Event[] = [];
+      const multistatus = XmlUtils.getMultistatus(xmlData);
+
+      if (multistatus) {
+        const responses = XmlUtils.getResponses(multistatus);
+
+        for (const response of responses) {
+          try {
+            // Find successful propstat
+            const propstat = Array.isArray(response['d:propstat'])
+              ? response['d:propstat'].find(
+                  (ps: { 'd:status'?: string }) => ps['d:status'] === 'HTTP/1.1 200 OK',
+                )
+              : response['d:propstat'];
+
+            if (!propstat || !propstat['d:prop']) {
+              continue;
+            }
+
+            const prop = propstat['d:prop'];
+
+            // Get the calendar data (iCalendar format)
+            const calendarData = prop['c:calendar-data'] || prop['calendar-data'];
+
+            if (!calendarData) {
+              continue;
+            }
+
+            // Parse the iCalendar data to get expanded instances
+            const parsedEvents = iCalUtils.parseICalEvents(calendarData.toString(), calendarId);
+
+            // Add to our list of expanded events
+            expandedEvents.push(...parsedEvents);
+          } catch (parseError) {
+            this.logger.warn('Error parsing expanded event response:', parseError);
+          }
+        }
+      }
+
+      // Now merge the expanded events with the non-recurring events
+      const nonRecurringEvents = events.filter((event) => !event.recurrenceRule);
+      const mergedEvents = [...nonRecurringEvents, ...expandedEvents];
+
+      this.logger.info(
+        `Expanded ${recurringEvents.length} recurring events into ${expandedEvents.length} instances`,
+      );
+      return mergedEvents;
+    } catch (error) {
+      this.logger.error('Error expanding recurring events:', error);
+      throw new Error(`Failed to expand recurring events: ${(error as Error).message}`);
     }
   }
 

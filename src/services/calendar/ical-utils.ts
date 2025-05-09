@@ -470,16 +470,51 @@ function parseEventComponent(eventData: string, calendarId: string): Event | nul
  * @returns A Date object or null if invalid
  */
 function parseICalDate(dateStr: string): Date | null {
-  if (!dateStr || dateStr.length < 8) return null;
+  // Validate input
+  if (!dateStr) {
+    logger.warn('parseICalDate: Empty or undefined date string');
+    return null;
+  }
+
+  // Check format: exact 8 characters for YYYYMMDD
+  if (dateStr.length !== 8 || !/^\d{8}$/.test(dateStr)) {
+    logger.warn(`parseICalDate: Invalid date format: "${dateStr}"`);
+    return null;
+  }
 
   try {
     const year = parseInt(dateStr.substring(0, 4), 10);
     const month = parseInt(dateStr.substring(4, 6), 10) - 1; // Months are 0-based in JS
     const day = parseInt(dateStr.substring(6, 8), 10);
 
-    return new Date(year, month, day);
-  } catch {
-    // On error, return null
+    // Validate date components
+    if (year < 1900 || year > 2100) {
+      logger.warn(`parseICalDate: Year out of range: ${year}`);
+      return null;
+    }
+
+    if (month < 0 || month > 11) {
+      logger.warn(`parseICalDate: Month out of range: ${month + 1}`);
+      return null;
+    }
+
+    if (day < 1 || day > 31) {
+      logger.warn(`parseICalDate: Day out of range: ${day}`);
+      return null;
+    }
+
+    // Create date and validate (this will handle invalid dates like Feb 30)
+    const date = new Date(year, month, day);
+
+    // Check if the date is valid by seeing if the components match what we provided
+    if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) {
+      logger.warn(`parseICalDate: Invalid date: ${year}-${month + 1}-${day}`);
+      return null;
+    }
+
+    return date;
+  } catch (error) {
+    logger.warn(`parseICalDate: Error parsing date "${dateStr}":`, error);
     return null;
   }
 }
@@ -490,11 +525,21 @@ function parseICalDate(dateStr: string): Date | null {
  * @returns A Date object or null if invalid
  */
 function parseICalDateTime(dateTimeStr: string): Date | null {
-  if (!dateTimeStr || dateTimeStr.length < 8) return null;
+  // Validate input
+  if (!dateTimeStr) {
+    logger.warn('parseICalDateTime: Empty or undefined datetime string');
+    return null;
+  }
+
+  // Basic format check: minimum 8 chars, only contains allowed characters
+  if (dateTimeStr.length < 8 || !/^[\dTZ]+$/.test(dateTimeStr)) {
+    logger.warn(`parseICalDateTime: Invalid datetime format: "${dateTimeStr}"`);
+    return null;
+  }
 
   try {
     // Check if it's just a date (no time component)
-    if (dateTimeStr.length === 8) {
+    if (dateTimeStr.length === 8 && /^\d{8}$/.test(dateTimeStr)) {
       return parseICalDate(dateTimeStr);
     }
 
@@ -513,10 +558,38 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
     const dateStr = cleanStr.substring(0, tPos);
     const timeStr = cleanStr.substring(tPos + 1);
 
+    // Validate date part (should be 8 digits)
+    if (dateStr.length !== 8 || !/^\d{8}$/.test(dateStr)) {
+      logger.warn(`parseICalDateTime: Invalid date part: "${dateStr}"`);
+      return null;
+    }
+
+    // Validate time part (should be 2, 4, or 6 digits)
+    if (![2, 4, 6].includes(timeStr.length) || !/^\d+$/.test(timeStr)) {
+      logger.warn(`parseICalDateTime: Invalid time part: "${timeStr}"`);
+      return null;
+    }
+
     // Parse date
     const year = parseInt(dateStr.substring(0, 4), 10);
     const month = parseInt(dateStr.substring(4, 6), 10) - 1; // Months are 0-based in JS
     const day = parseInt(dateStr.substring(6, 8), 10);
+
+    // Validate date components
+    if (year < 1900 || year > 2100) {
+      logger.warn(`parseICalDateTime: Year out of range: ${year}`);
+      return null;
+    }
+
+    if (month < 0 || month > 11) {
+      logger.warn(`parseICalDateTime: Month out of range: ${month + 1}`);
+      return null;
+    }
+
+    if (day < 1 || day > 31) {
+      logger.warn(`parseICalDateTime: Day out of range: ${day}`);
+      return null;
+    }
 
     // Parse time
     let hour = 0,
@@ -525,23 +598,70 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
 
     if (timeStr.length >= 2) {
       hour = parseInt(timeStr.substring(0, 2), 10);
+      if (hour < 0 || hour > 23) {
+        logger.warn(`parseICalDateTime: Hour out of range: ${hour}`);
+        return null;
+      }
     }
 
     if (timeStr.length >= 4) {
       minute = parseInt(timeStr.substring(2, 4), 10);
+      if (minute < 0 || minute > 59) {
+        logger.warn(`parseICalDateTime: Minute out of range: ${minute}`);
+        return null;
+      }
     }
 
     if (timeStr.length >= 6) {
       second = parseInt(timeStr.substring(4, 6), 10);
+      if (second < 0 || second > 59) {
+        logger.warn(`parseICalDateTime: Second out of range: ${second}`);
+        return null;
+      }
     }
 
+    // Create the date object
+    let date: Date;
     if (isUTC) {
-      return new Date(Date.UTC(year, month, day, hour, minute, second));
+      date = new Date(Date.UTC(year, month, day, hour, minute, second));
     } else {
-      return new Date(year, month, day, hour, minute, second);
+      date = new Date(year, month, day, hour, minute, second);
     }
-  } catch {
-    // On error, return null
+
+    // Validate the date by checking if components match
+    if (isUTC) {
+      if (
+        date.getUTCFullYear() !== year ||
+        date.getUTCMonth() !== month ||
+        date.getUTCDate() !== day ||
+        date.getUTCHours() !== hour ||
+        date.getUTCMinutes() !== minute ||
+        date.getUTCSeconds() !== second
+      ) {
+        logger.warn(
+          `parseICalDateTime: Invalid UTC datetime: ${year}-${month + 1}-${day} ${hour}:${minute}:${second}`,
+        );
+        return null;
+      }
+    } else {
+      if (
+        date.getFullYear() !== year ||
+        date.getMonth() !== month ||
+        date.getDate() !== day ||
+        date.getHours() !== hour ||
+        date.getMinutes() !== minute ||
+        date.getSeconds() !== second
+      ) {
+        logger.warn(
+          `parseICalDateTime: Invalid datetime: ${year}-${month + 1}-${day} ${hour}:${minute}:${second}`,
+        );
+        return null;
+      }
+    }
+
+    return date;
+  } catch (error) {
+    logger.warn(`parseICalDateTime: Error parsing datetime "${dateTimeStr}":`, error);
     return null;
   }
 }

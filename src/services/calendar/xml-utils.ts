@@ -218,6 +218,11 @@ export function getResponses(multistatus: Record<string, unknown>): Array<Record
  * @param start Start date of the range (optional)
  * @param end End date of the range (optional)
  * @returns XML string for the REPORT request
+ *
+ * TODO: Enhance this method to support additional server-side filtering options beyond time range,
+ * such as filtering by categories, status, or other standardized properties to improve performance
+ * with large calendars. This can be done by adding additional comp-filter and prop-filter elements
+ * to the filter section.
  */
 export function buildEventsReportRequest(start?: Date, end?: Date): string {
   // Default time range if not specified: +/- 6 months from current date
