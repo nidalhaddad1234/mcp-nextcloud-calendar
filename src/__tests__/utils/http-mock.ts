@@ -1,17 +1,12 @@
 /**
  * Utilities for mocking HTTP requests in tests
  */
-// Note: axios is imported but mocked in test files
 import { jest } from '@jest/globals';
 import { Calendar, Event } from '../../models/calendar.js';
 import { XMLResponseFactory } from './xml-response-factory.js';
 
-// Mock axios for ESM environment
-const mockAxiosImpl = jest.fn(() => Promise.resolve({ data: '', status: 200 }));
-
-// Add mock methods to the implementation
-mockAxiosImpl.mockResolvedValueOnce = jest.fn();
-mockAxiosImpl.mockRejectedValueOnce = jest.fn();
+// Import axios but don't use it directly since it's mocked in jest-setup.test.js
+import axios from 'axios';
 
 /**
  * Setup axios mock for a test file
@@ -21,12 +16,8 @@ export function setupAxiosMock() {
   // Clear previous mocks
   jest.resetAllMocks();
 
-  // Reset the axios mock implementation functions
-  mockAxiosImpl.mockResolvedValueOnce.mockReset();
-  mockAxiosImpl.mockRejectedValueOnce.mockReset();
-
   // Return the mock implementation for configuration
-  return mockAxiosImpl;
+  return axios;
 }
 
 /**
@@ -61,12 +52,15 @@ export const HttpMock = {
       username: options?.username,
     });
 
-    mockAxiosImpl.mockResolvedValueOnce(this.createResponse(
-      response,
-      207, // Multi-Status
-      {},
-      'Multi-Status'
-    ));
+    // Use axios mock directly (as any to bypass TypeScript)
+    (axios as any).mockResolvedValueOnce(
+      this.createResponse(
+        response,
+        207, // Multi-Status
+        {},
+        'Multi-Status',
+      ),
+    );
   },
 
   /**
@@ -84,48 +78,60 @@ export const HttpMock = {
       username: options?.username,
     });
 
-    mockAxiosImpl.mockResolvedValueOnce(this.createResponse(
-      response,
-      207, // Multi-Status
-      {},
-      'Multi-Status'
-    ));
+    // Use axios mock directly (as any to bypass TypeScript)
+    (axios as any).mockResolvedValueOnce(
+      this.createResponse(
+        response,
+        207, // Multi-Status
+        {},
+        'Multi-Status',
+      ),
+    );
   },
 
   /**
    * Mock a successful calendar creation (MKCALENDAR)
    */
   mockSuccessfulCalendarCreation(): void {
-    mockAxiosImpl.mockResolvedValueOnce(this.createResponse(
-      XMLResponseFactory.createMkcalendarResponse(),
-      201, // Created
-      {},
-      'Created'
-    ));
+    // Use axios mock directly (as any to bypass TypeScript)
+    (axios as any).mockResolvedValueOnce(
+      this.createResponse(
+        XMLResponseFactory.createMkcalendarResponse(),
+        201, // Created
+        {},
+        'Created',
+      ),
+    );
   },
 
   /**
    * Mock a successful property update (PROPPATCH)
    */
   mockSuccessfulPropertyUpdate(): void {
-    mockAxiosImpl.mockResolvedValueOnce(this.createResponse(
-      XMLResponseFactory.createProppatchResponse(),
-      207, // Multi-Status
-      {},
-      'Multi-Status'
-    ));
+    // Use axios mock directly (as any to bypass TypeScript)
+    (axios as any).mockResolvedValueOnce(
+      this.createResponse(
+        XMLResponseFactory.createProppatchResponse(),
+        207, // Multi-Status
+        {},
+        'Multi-Status',
+      ),
+    );
   },
 
   /**
    * Mock a successful calendar or event deletion
    */
   mockSuccessfulDeletion(): void {
-    mockAxiosImpl.mockResolvedValueOnce(this.createResponse(
-      '',
-      204, // No Content
-      {},
-      'No Content'
-    ));
+    // Use axios mock directly (as any to bypass TypeScript)
+    (axios as any).mockResolvedValueOnce(
+      this.createResponse(
+        '',
+        204, // No Content
+        {},
+        'No Content',
+      ),
+    );
   },
 
   /**
@@ -138,12 +144,15 @@ export const HttpMock = {
       headers.etag = etag;
     }
 
-    mockAxiosImpl.mockResolvedValueOnce(this.createResponse(
-      '',
-      201, // Created (or 204 No Content for updates, both work)
-      headers,
-      'Created'
-    ));
+    // Use axios mock directly (as any to bypass TypeScript)
+    (axios as any).mockResolvedValueOnce(
+      this.createResponse(
+        '',
+        201, // Created (or 204 No Content for updates, both work)
+        headers,
+        'Created',
+      ),
+    );
   },
 
   /**
@@ -151,12 +160,8 @@ export const HttpMock = {
    * @param etag ETag header value
    */
   mockSuccessfulHeadRequest(etag: string): void {
-    mockAxiosImpl.mockResolvedValueOnce(this.createResponse(
-      '',
-      200,
-      { etag },
-      'OK'
-    ));
+    // Use axios mock directly (as any to bypass TypeScript)
+    (axios as any).mockResolvedValueOnce(this.createResponse('', 200, { etag }, 'OK'));
   },
 
   /**
@@ -172,7 +177,8 @@ export const HttpMock = {
       data: XMLResponseFactory.createErrorResponse(status, message),
     };
 
-    mockAxiosImpl.mockRejectedValueOnce(error);
+    // Use axios mock directly (as any to bypass TypeScript)
+    (axios as any).mockRejectedValueOnce(error);
   },
 
   /**
@@ -185,7 +191,8 @@ export const HttpMock = {
     (error as any).request = {}; // Request exists but no response
     (error as any).response = undefined;
 
-    mockAxiosImpl.mockRejectedValueOnce(error);
+    // Use axios mock directly (as any to bypass TypeScript)
+    (axios as any).mockRejectedValueOnce(error);
   },
 
   /**

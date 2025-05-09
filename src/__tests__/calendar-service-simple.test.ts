@@ -3,7 +3,7 @@
  */
 import { jest } from '@jest/globals';
 import { CalendarService } from '../services/calendar/calendar-service.js';
-import { ConfigFactory, Fixtures, XMLResponseFactory } from './utils/index.js';
+import { ConfigFactory, XMLResponseFactory } from './utils/index.js';
 
 // Mock axios with a basic implementation
 jest.mock('axios');
@@ -15,17 +15,15 @@ describe('CalendarService Simple Test', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.resetAllMocks();
-    
-    // Set up base axios mock implementation
-    axios.default = jest.fn().mockResolvedValue({ data: '', status: 200 });
-    axios.isAxiosError = jest.fn().mockReturnValue(true);
+
+    // No need to mock here - jest-setup.test.js handles this
   });
 
   describe('constructor', () => {
     it('should initialize with valid config', () => {
       // Use the ConfigFactory to create a standard config
       const mockConfig = ConfigFactory.createNextcloudConfig();
-      
+
       // We're just checking that the constructor doesn't throw
       const service = new CalendarService(mockConfig);
       expect(service).toBeDefined();
@@ -36,11 +34,12 @@ describe('CalendarService Simple Test', () => {
       const invalidConfig = ConfigFactory.createNextcloudConfig({
         baseUrl: '',
         username: '',
-        appToken: ''
+        appToken: '',
       });
 
-      expect(() => new CalendarService(invalidConfig))
-        .toThrow('Nextcloud configuration is incomplete');
+      expect(() => new CalendarService(invalidConfig)).toThrow(
+        'Nextcloud configuration is incomplete',
+      );
     });
   });
 
@@ -48,18 +47,18 @@ describe('CalendarService Simple Test', () => {
     it('should handle errors gracefully', async () => {
       const mockConfig = ConfigFactory.createNextcloudConfig();
       const service = new CalendarService(mockConfig);
-      
+
       // Simulate a server error
       const error = new Error('Server error');
       (error as any).response = {
         status: 500,
         statusText: 'Server error',
-        data: XMLResponseFactory.createErrorResponse(500, 'Server error')
+        data: XMLResponseFactory.createErrorResponse(500, 'Server error'),
       };
-      
+
       // Set up the mock to throw the error
-      (axios as any).mockRejectedValueOnce(error);
-      
+      (axios as unknown as jest.Mock).mockRejectedValueOnce(error);
+
       // Verify the method rejects with an error
       await expect(service.getCalendars()).rejects.toThrow(/Failed to fetch calendars/);
     });
