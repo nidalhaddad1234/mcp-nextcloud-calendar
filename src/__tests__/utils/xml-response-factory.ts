@@ -2,7 +2,10 @@
  * Factory for creating XML response strings for testing
  */
 import { Calendar, Event } from '../../models/calendar.js';
-import { escapeXml } from '../../services/calendar/xml-utils.js';
+import { XmlService } from '../../services/xml/index.js';
+
+// Create a singleton instance of XmlService for use in this factory
+const xmlService = new XmlService();
 
 /**
  * Factory for creating XML responses for CalDAV operations
@@ -56,17 +59,17 @@ export class XMLResponseFactory {
           <d:collection/>
           <cal:calendar/>
         </d:resourcetype>
-        <d:displayname>${escapeXml(calendar.displayName)}</d:displayname>
+        <d:displayname>${xmlService.escapeXml(calendar.displayName)}</d:displayname>
         <oc:calendar-enabled>1</oc:calendar-enabled>
         <cal:supported-calendar-component-set>${supportedComponents}</cal:supported-calendar-component-set>
-        <oc:calendar-color>${escapeXml(calendar.color)}</oc:calendar-color>
-        <oc:owner-principal>principals/users/${escapeXml(calendar.owner)}</oc:owner-principal>
+        <oc:calendar-color>${xmlService.escapeXml(calendar.color)}</oc:calendar-color>
+        <oc:owner-principal>principals/users/${xmlService.escapeXml(calendar.owner)}</oc:owner-principal>
         <cs:getctag>"${Date.now()}"</cs:getctag>
         <oc:is-default-calendar>${isDefault}</oc:is-default-calendar>`;
 
       if (calendar.category) {
         xmlResponse += `
-        <oc:calendar-category>${escapeXml(calendar.category)}</oc:calendar-category>`;
+        <oc:calendar-category>${xmlService.escapeXml(calendar.category)}</oc:calendar-category>`;
       }
 
       if (calendar.focusPriority !== null && calendar.focusPriority !== undefined) {
@@ -123,7 +126,7 @@ export class XMLResponseFactory {
     <d:propstat>
       <d:prop>
         <d:getetag>"${Date.now()}"</d:getetag>
-        <cal:calendar-data>${escapeXml(iCalData)}</cal:calendar-data>
+        <cal:calendar-data>${xmlService.escapeXml(iCalData)}</cal:calendar-data>
       </d:prop>
       <d:status>HTTP/1.1 200 OK</d:status>
     </d:propstat>
@@ -208,7 +211,7 @@ END:VCALENDAR`;
   static createErrorResponse(status: number, message: string): string {
     return `<?xml version="1.0"?>
 <d:error xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns">
-  <s:message>${escapeXml(message)}</s:message>
+  <s:message>${xmlService.escapeXml(message)}</s:message>
   <s:exception>Some\\Exception</s:exception>
 </d:error>`;
   }
