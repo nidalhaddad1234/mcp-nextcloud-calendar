@@ -9,6 +9,94 @@ import { setupMcpTransport } from './handlers/mcp-transport.js';
 import { getCalendarsHandler, sanitizeError } from './handlers/calendars.js';
 import { CalendarService, EventService } from './services/index.js';
 import * as os from 'node:os';
+import type { Participant, RecurrenceRule } from './models/calendar.js';
+
+/**
+ * Helper functions for validating and processing event data
+ */
+const EventHelpers = {
+  /**
+   * Validates a date string and returns a Date object
+   * @param dateString Date string to validate
+   * @param fieldName Name of the field for error message
+   * @returns Valid Date object
+   * @throws Error if date is invalid
+   */
+  validateDate(dateString: string, fieldName: string): Date {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) {
+      throw new Error(`Invalid ${fieldName} date format`);
+    }
+    return date;
+  },
+
+  /**
+   * Processes recurrence rule and validates until date
+   * @param recurrenceRule Recurrence rule object from request
+   * @returns Processed recurrence rule with validated until date
+   */
+  processRecurrenceRule(recurrenceRule: Record<string, unknown>): RecurrenceRule {
+    let untilDate = undefined;
+
+    // Validate until date if provided
+    if (recurrenceRule.until) {
+      untilDate = this.validateDate(recurrenceRule.until as string, 'recurrence rule until');
+    }
+
+    // Return properly typed RecurrenceRule object
+    return {
+      frequency: recurrenceRule.frequency as 'daily' | 'weekly' | 'monthly' | 'yearly',
+      interval: recurrenceRule.interval as number | undefined,
+      until: untilDate,
+      count: recurrenceRule.count as number | undefined,
+      byDay: recurrenceRule.byDay as ('MO' | 'TU' | 'WE' | 'TH' | 'FR' | 'SA' | 'SU')[] | undefined,
+      byMonthDay: recurrenceRule.byMonthDay as number[] | undefined,
+      byMonth: recurrenceRule.byMonth as number[] | undefined,
+      bySetPos: recurrenceRule.bySetPos as number[] | undefined,
+      exDates: undefined, // This field isn't in the input
+    };
+  },
+
+  /**
+   * Validates and normalizes focusPriority within range 1-10
+   * @param value Input value
+   * @returns Normalized value or undefined if input is undefined
+   */
+  validateFocusPriority(value: number | undefined): number | undefined {
+    if (value === undefined) return undefined;
+    return Math.min(Math.max(1, Math.round(Number(value))), 10);
+  },
+
+  /**
+   * Validates and normalizes energyLevel within range 1-5
+   * @param value Input value
+   * @returns Normalized value or undefined if input is undefined
+   */
+  validateEnergyLevel(value: number | undefined): number | undefined {
+    if (value === undefined) return undefined;
+    return Math.min(Math.max(1, Math.round(Number(value))), 5);
+  },
+
+  /**
+   * Ensures participants have a valid status field
+   * @param participants Array of participants
+   * @returns Array of participants with default status if missing
+   */
+  validateParticipants(
+    participants: Record<string, unknown>[] | undefined,
+  ): Participant[] | undefined {
+    if (!participants) return undefined;
+
+    return participants.map((p) => ({
+      email: p.email as string,
+      name: p.name as string | null | undefined,
+      status: (p.status as Participant['status'] | undefined) || 'needs-action',
+      role: p.role as 'required' | 'optional' | undefined,
+      type: p.type as 'individual' | 'group' | 'resource' | 'room' | undefined,
+      comment: p.comment as string | null | undefined,
+    }));
+  },
+};
 
 /**
  * Utility function to handle and sanitize errors for MCP calendar tools
@@ -177,10 +265,7 @@ if (calendarService) {
         if (focusPriority !== undefined) updates.focusPriority = focusPriority;
 
         if (Object.keys(updates).length === 0) {
-          return {
-            isError: true,
-            content: [{ type: 'text', text: 'No update parameters provided' }],
-          };
+          throw new Error('No update parameters provided');
         }
 
         const calendar = await calendarService.updateCalendar(id, updates);
@@ -372,18 +457,14 @@ if (eventService) {
       reminders,
     }) => {
       try {
-        // Parse dates
-        const startDate = new Date(start);
-        const endDate = new Date(end);
+        // Parse and validate dates using helper function
+        const startDate = EventHelpers.validateDate(start, 'start');
+        const endDate = EventHelpers.validateDate(end, 'end');
 
-        // Handle recurrence rule if provided
-        let processedRecurrenceRule;
-        if (recurrenceRule) {
-          processedRecurrenceRule = {
-            ...recurrenceRule,
-            until: recurrenceRule.until ? new Date(recurrenceRule.until) : undefined,
-          };
-        }
+        // Process recurrence rule if provided using helper function
+        const processedRecurrenceRule = recurrenceRule
+          ? EventHelpers.processRecurrenceRule(recurrenceRule)
+          : undefined;
 
         // Create the event
         const event = await eventService.createEvent(calendarId, {
@@ -398,14 +479,11 @@ if (eventService) {
           status,
           visibility,
           availability,
-          adhdCategory,
-          focusPriority,
-          energyLevel,
+          adhdCategory: adhdCategory ? String(adhdCategory).trim() : adhdCategory,
+          focusPriority: EventHelpers.validateFocusPriority(focusPriority),
+          energyLevel: EventHelpers.validateEnergyLevel(energyLevel),
           categories,
-          participants: participants?.map((p) => ({
-            ...p,
-            status: p.status || 'needs-action',
-          })),
+          participants: EventHelpers.validateParticipants(participants),
           recurrenceRule: processedRecurrenceRule,
           reminders,
         });
@@ -501,8 +579,15 @@ if (eventService) {
 
         // Add all provided fields to the updates object
         if (title !== undefined) updates.title = title;
-        if (start !== undefined) updates.start = new Date(start);
-        if (end !== undefined) updates.end = new Date(end);
+
+        // Parse and validate dates using helper function
+        if (start !== undefined) {
+          updates.start = EventHelpers.validateDate(start, 'start');
+        }
+
+        if (end !== undefined) {
+          updates.end = EventHelpers.validateDate(end, 'end');
+        }
         if (isAllDay !== undefined) updates.isAllDay = isAllDay;
         if (description !== undefined) updates.description = description;
         if (location !== undefined) updates.location = location;
@@ -510,33 +595,34 @@ if (eventService) {
         if (status !== undefined) updates.status = status;
         if (visibility !== undefined) updates.visibility = visibility;
         if (availability !== undefined) updates.availability = availability;
-        if (adhdCategory !== undefined) updates.adhdCategory = adhdCategory;
-        if (focusPriority !== undefined) updates.focusPriority = focusPriority;
-        if (energyLevel !== undefined) updates.energyLevel = energyLevel;
-        if (categories !== undefined) updates.categories = categories;
-        if (participants !== undefined)
-          updates.participants = participants.map((p) => ({
-            ...p,
-            status: p.status || 'needs-action',
-          }));
 
-        // Process recurrence rule if provided
+        // Validate and sanitize custom fields using helper functions
+        if (adhdCategory !== undefined) {
+          updates.adhdCategory = String(adhdCategory).trim();
+        }
+
+        if (focusPriority !== undefined) {
+          updates.focusPriority = EventHelpers.validateFocusPriority(focusPriority);
+        }
+
+        if (energyLevel !== undefined) {
+          updates.energyLevel = EventHelpers.validateEnergyLevel(energyLevel);
+        }
+        if (categories !== undefined) updates.categories = categories;
+        if (participants !== undefined) {
+          updates.participants = EventHelpers.validateParticipants(participants);
+        }
+
+        // Process recurrence rule if provided using helper function
         if (recurrenceRule !== undefined) {
-          const processedRecurrenceRule = {
-            ...recurrenceRule,
-            until: recurrenceRule.until ? new Date(recurrenceRule.until) : undefined,
-          };
-          updates.recurrenceRule = processedRecurrenceRule;
+          updates.recurrenceRule = EventHelpers.processRecurrenceRule(recurrenceRule);
         }
 
         if (reminders !== undefined) updates.reminders = reminders;
 
         // Check if any updates were provided
         if (Object.keys(updates).length === 0) {
-          return {
-            isError: true,
-            content: [{ type: 'text', text: 'No update parameters provided' }],
-          };
+          throw new Error('No update parameters provided');
         }
 
         // Update the event
