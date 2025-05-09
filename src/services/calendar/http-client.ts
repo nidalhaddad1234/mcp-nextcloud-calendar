@@ -45,16 +45,16 @@ export class CalendarHttpClient {
   async propfind(data: string, depth: string = '1'): Promise<string> {
     try {
       logger.debug('Making PROPFIND request to Nextcloud CalDAV');
-      
+
       const response = await axios({
         method: 'PROPFIND',
         url: this.caldavUrl,
         headers: {
-          'Authorization': this.authHeader,
-          'Depth': depth,
+          Authorization: this.authHeader,
+          Depth: depth,
           'Content-Type': 'application/xml; charset=utf-8',
         },
-        data
+        data,
       });
 
       return response.data;
@@ -74,15 +74,15 @@ export class CalendarHttpClient {
     try {
       const calendarUrl = this.caldavUrl + calendarId + '/';
       logger.debug(`Making MKCALENDAR request for calendar ${calendarId}`);
-      
+
       await axios({
         method: 'MKCALENDAR',
         url: calendarUrl,
         headers: {
-          'Authorization': this.authHeader,
-          'Content-Type': 'application/xml; charset=utf-8'
+          Authorization: this.authHeader,
+          'Content-Type': 'application/xml; charset=utf-8',
         },
-        data
+        data,
       });
     } catch (error) {
       logger.error(`MKCALENDAR request failed for ${calendarId}:`, error);
@@ -100,15 +100,15 @@ export class CalendarHttpClient {
     try {
       const calendarUrl = this.caldavUrl + calendarId + '/';
       logger.debug(`Making PROPPATCH request for calendar ${calendarId}`);
-      
+
       await axios({
         method: 'PROPPATCH',
         url: calendarUrl,
         headers: {
-          'Authorization': this.authHeader,
-          'Content-Type': 'application/xml; charset=utf-8'
+          Authorization: this.authHeader,
+          'Content-Type': 'application/xml; charset=utf-8',
         },
-        data
+        data,
       });
     } catch (error) {
       logger.error(`PROPPATCH request failed for ${calendarId}:`, error);
@@ -124,17 +124,163 @@ export class CalendarHttpClient {
     try {
       const calendarUrl = this.caldavUrl + calendarId + '/';
       logger.debug(`Making DELETE request for calendar ${calendarId}`);
-      
+
       await axios({
         method: 'DELETE',
         url: calendarUrl,
         headers: {
-          'Authorization': this.authHeader
-        }
+          Authorization: this.authHeader,
+        },
       });
     } catch (error) {
       logger.error(`DELETE request failed for ${calendarId}:`, error);
       throw this.handleHttpError(error, 'Failed to delete calendar');
+    }
+  }
+
+  /**
+   * Make a REPORT request to fetch calendar events
+   * @param calendarId The ID of the calendar to query
+   * @param data XML data for the request
+   * @returns The response data
+   */
+  async calendarReport(calendarId: string, data: string): Promise<string> {
+    try {
+      const calendarUrl = this.caldavUrl + calendarId + '/';
+      logger.debug(`Making REPORT request for calendar ${calendarId}`);
+
+      const response = await axios({
+        method: 'REPORT',
+        url: calendarUrl,
+        headers: {
+          Authorization: this.authHeader,
+          'Content-Type': 'application/xml; charset=utf-8',
+          Depth: '1',
+        },
+        data,
+      });
+
+      return response.data;
+    } catch (error) {
+      logger.error(`REPORT request failed for ${calendarId}:`, error);
+      throw this.handleHttpError(error, 'Failed to fetch calendar events');
+    }
+  }
+
+  /**
+   * Fetch a specific event by URL
+   * @param eventUrl The full URL of the event to fetch
+   * @returns The response data (iCalendar format)
+   */
+  async getEvent(eventUrl: string): Promise<string> {
+    try {
+      logger.debug(`Making GET request for event at ${eventUrl}`);
+
+      const response = await axios({
+        method: 'GET',
+        url: eventUrl,
+        headers: {
+          Authorization: this.authHeader,
+          Accept: 'text/calendar',
+        },
+      });
+
+      return response.data;
+    } catch (error) {
+      logger.error(`GET request failed for event:`, error);
+      throw this.handleHttpError(error, 'Failed to fetch event');
+    }
+  }
+
+  /**
+   * Create or update an event
+   * @param calendarId The ID of the calendar
+   * @param eventId The ID of the event
+   * @param iCalData The event data in iCalendar format
+   * @returns True if the operation was successful
+   */
+  async putEvent(calendarId: string, eventId: string, iCalData: string): Promise<boolean> {
+    try {
+      const eventUrl = this.caldavUrl + calendarId + '/' + eventId + '.ics';
+      logger.debug(`Making PUT request for event ${eventId} in calendar ${calendarId}`);
+
+      await axios({
+        method: 'PUT',
+        url: eventUrl,
+        headers: {
+          Authorization: this.authHeader,
+          'Content-Type': 'text/calendar; charset=utf-8',
+          'If-None-Match': '*', // Ensure we don't overwrite an event if it exists
+        },
+        data: iCalData,
+      });
+
+      return true;
+    } catch (error) {
+      logger.error(`PUT request failed for event ${eventId}:`, error);
+      throw this.handleHttpError(error, 'Failed to save event');
+    }
+  }
+
+  /**
+   * Update an existing event
+   * @param calendarId The ID of the calendar
+   * @param eventId The ID of the event
+   * @param iCalData The updated event data in iCalendar format
+   * @param etag The ETag of the current version to prevent conflicts
+   * @returns True if the operation was successful
+   */
+  async updateEvent(
+    calendarId: string,
+    eventId: string,
+    iCalData: string,
+    etag: string,
+  ): Promise<boolean> {
+    try {
+      const eventUrl = this.caldavUrl + calendarId + '/' + eventId + '.ics';
+      logger.debug(`Making PUT request to update event ${eventId} in calendar ${calendarId}`);
+
+      await axios({
+        method: 'PUT',
+        url: eventUrl,
+        headers: {
+          Authorization: this.authHeader,
+          'Content-Type': 'text/calendar; charset=utf-8',
+          'If-Match': etag, // Ensure we only update if the event hasn't changed
+        },
+        data: iCalData,
+      });
+
+      return true;
+    } catch (error) {
+      logger.error(`PUT request failed for updating event ${eventId}:`, error);
+      throw this.handleHttpError(error, 'Failed to update event');
+    }
+  }
+
+  /**
+   * Delete an event
+   * @param calendarId The ID of the calendar containing the event
+   * @param eventId The ID of the event to delete
+   * @returns True if the operation was successful
+   */
+  async deleteEvent(calendarId: string, eventId: string): Promise<boolean> {
+    try {
+      const eventUrl = this.caldavUrl + calendarId + '/' + eventId + '.ics';
+      logger.debug(`Making DELETE request for event ${eventId} in calendar ${calendarId}`);
+
+      await axios({
+        method: 'DELETE',
+        url: eventUrl,
+        headers: {
+          Authorization: this.authHeader,
+        },
+      });
+
+      return true;
+    } catch (error) {
+      logger.error(`DELETE request failed for event ${eventId}:`, error);
+      throw this.handleHttpError(error, 'Failed to delete event');
     }
   }
 
