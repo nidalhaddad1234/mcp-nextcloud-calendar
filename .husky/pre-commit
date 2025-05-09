@@ -1,4 +1,4 @@
 #!/usr/bin/env sh
 
-# Run lint-staged to format and lint files before commit
+# Run lint-staged without TypeScript type-checking
 npx lint-staged
