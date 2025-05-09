@@ -25,6 +25,51 @@ const defaultConfig: ServerConfig = {
   keepAliveInterval: 30000, // Default: 30 seconds
 };
 
+/**
+ * Validates that required environment variables are present
+ * @returns An object with validation results
+ */
+export function validateEnvironmentVariables(): {
+  isValid: boolean;
+  missing: string[];
+  serverReady: boolean;
+  calendarReady: boolean;
+} {
+  const missing: string[] = [];
+
+  // Check basic server environment variables (optional but recommended)
+  const serverVars = ['PORT', 'SERVER_NAME', 'SERVER_VERSION', 'NODE_ENV'];
+
+  // Check Nextcloud environment variables (required for calendar functionality)
+  const nextcloudVars = ['NEXTCLOUD_BASE_URL', 'NEXTCLOUD_USERNAME', 'NEXTCLOUD_APP_TOKEN'];
+
+  // Check for missing variables
+  [...serverVars, ...nextcloudVars].forEach(varName => {
+    if (!process.env[varName]) {
+      missing.push(varName);
+    }
+  });
+
+  // Check if any Nextcloud vars are missing
+  const missingNextcloud = nextcloudVars.filter(varName => !process.env[varName]);
+
+  // The server can function without Nextcloud config, but calendar service won't be available
+  const calendarReady = missingNextcloud.length === 0;
+
+  // The overall validity only requires the basic server config to be valid
+  const isValid = true; // Server can start even with missing environment variables
+
+  // Determine if the server is ready for basic operation
+  const serverReady = true; // Server can always start with default settings
+
+  return {
+    isValid,
+    missing,
+    serverReady,
+    calendarReady
+  };
+}
+
 export function loadConfig(): { server: ServerConfig; nextcloud: NextcloudConfig } {
   // Check command line args for port override
   const args = process.argv.slice(2);
@@ -39,6 +84,14 @@ export function loadConfig(): { server: ServerConfig; nextcloud: NextcloudConfig
     }
   }
 
+  // Get and validate the Nextcloud environment variables
+  const nextcloudBaseUrl = process.env.NEXTCLOUD_BASE_URL || '';
+  const nextcloudUsername = process.env.NEXTCLOUD_USERNAME || '';
+  const nextcloudAppToken = process.env.NEXTCLOUD_APP_TOKEN || '';
+
+  // Trim trailing slashes from base URL to ensure consistent format
+  const formattedBaseUrl = nextcloudBaseUrl.replace(/\/+$/, '');
+
   return {
     server: {
       port: portOverride || parseInt(process.env.PORT || String(defaultConfig.port)),
@@ -50,9 +103,9 @@ export function loadConfig(): { server: ServerConfig; nextcloud: NextcloudConfig
         : defaultConfig.keepAliveInterval,
     },
     nextcloud: {
-      baseUrl: process.env.NEXTCLOUD_BASE_URL || '',
-      username: process.env.NEXTCLOUD_USERNAME || '',
-      appToken: process.env.NEXTCLOUD_APP_TOKEN || '',
+      baseUrl: formattedBaseUrl,
+      username: nextcloudUsername,
+      appToken: nextcloudAppToken,
     },
   };
 }

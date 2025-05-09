@@ -27,6 +27,7 @@ export default [
     },
     rules: {
       ...ts.configs.recommended.rules,
+      '@typescript-eslint/no-unused-vars': ['error', { 'argsIgnorePattern': '^_' }],
     },
   },
   prettierConfig,

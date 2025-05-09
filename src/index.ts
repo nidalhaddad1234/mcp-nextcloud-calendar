@@ -1,13 +1,41 @@
 #!/usr/bin/env node
 // Import Express in a way compatible with both ESM and TypeScript
 import express from 'express';
+// Import the MCP server with a more flexible type definition
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { loadConfig } from './config/config.js';
+
+// Add type definition to work around missing registerTool method in type definition
+interface ToolParameter {
+  type: string;
+  description: string;
+  required?: boolean;
+}
+
+interface Tool {
+  name: string;
+  description: string;
+  parameters?: Record<string, ToolParameter>;
+  execute: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+}
+
+interface ExtendedMcpServer extends McpServer {
+  registerTool: (tool: Tool) => void;
+}
+import { loadConfig, validateEnvironmentVariables } from './config/config.js';
 import { healthHandler } from './handlers/health.js';
 import { setupMcpTransport } from './handlers/mcp-transport.js';
 import { getCalendarsHandler } from './handlers/calendars.js';
 import { CalendarService } from './services/index.js';
 import * as os from 'node:os';
+
+// Validate environment variables
+const validation = validateEnvironmentVariables();
+if (validation.missing.length > 0) {
+  console.warn('Some environment variables are missing:');
+  validation.missing.forEach(variable => {
+    console.warn(`  - ${variable}`);
+  });
+}
 
 // Load configuration
 const config = loadConfig();
@@ -15,22 +43,161 @@ const { server: serverConfig, nextcloud: nextcloudConfig } = config;
 
 // Initialize services
 let calendarService: CalendarService | null = null;
-try {
-  if (nextcloudConfig.baseUrl && nextcloudConfig.username && nextcloudConfig.appToken) {
+
+// Only try to initialize calendar service if all required environment variables are available
+if (validation.calendarReady) {
+  try {
     calendarService = new CalendarService(nextcloudConfig);
     console.log('Calendar service initialized successfully');
-  } else {
-    console.warn('Nextcloud configuration incomplete - Calendar service not initialized');
+  } catch (error) {
+    console.error('Failed to initialize calendar service:', error);
   }
-} catch (error) {
-  console.error('Failed to initialize calendar service:', error);
+} else {
+  console.warn(
+    'Calendar service not initialized due to missing environment variables:',
+    ['NEXTCLOUD_BASE_URL', 'NEXTCLOUD_USERNAME', 'NEXTCLOUD_APP_TOKEN']
+      .filter(varName => !process.env[varName])
+      .join(', ')
+  );
+  console.warn('Calendar-related functionality will not be available');
 }
 
 // Create MCP server
 const server = new McpServer({
   name: serverConfig.serverName,
   version: serverConfig.serverVersion,
-});
+}) as ExtendedMcpServer;
+
+// Register calendar tools if calendar service is available
+if (calendarService) {
+  // List calendars tool
+  server.registerTool({
+    name: 'listCalendars',
+    description: 'Get a list of all available calendars',
+    execute: async () => {
+      try {
+        const calendars = await calendarService.getCalendars();
+        return { success: true, calendars };
+      } catch (error) {
+        console.error('Error in listCalendars tool:', error);
+        return {
+          success: false,
+          error: 'Failed to retrieve calendars. Please try again later.'
+        };
+      }
+    }
+  });
+
+  // Create calendar tool
+  server.registerTool({
+    name: 'createCalendar',
+    description: 'Create a new calendar',
+    parameters: {
+      displayName: { type: 'string', description: 'The display name for the calendar' },
+      color: { type: 'string', description: 'The color for the calendar (hex format)', required: false },
+      category: { type: 'string', description: 'Visual category or tag for ADHD-friendly organization', required: false },
+      focusPriority: { type: 'number', description: 'Priority level for ADHD focus management (1-10)', required: false }
+    },
+    execute: async (params: Record<string, unknown>) => {
+      try {
+        if (!params.displayName) {
+          return { success: false, error: 'Calendar display name is required' };
+        }
+
+        const newCalendar = {
+          displayName: params.displayName,
+          color: params.color || '#0082c9',
+          owner: '', // Will be assigned by service
+          isDefault: false,
+          isShared: false,
+          isReadOnly: false,
+          permissions: {
+            canRead: true,
+            canWrite: true,
+            canShare: true,
+            canDelete: true
+          },
+          category: params.category,
+          focusPriority: params.focusPriority ? Number(params.focusPriority) : undefined,
+          metadata: null
+        };
+
+        const calendar = await calendarService.createCalendar(newCalendar);
+        return { success: true, calendar };
+      } catch (error) {
+        console.error('Error in createCalendar tool:', error);
+        return {
+          success: false,
+          error: 'Failed to create calendar. Please try again later.'
+        };
+      }
+    }
+  });
+
+  // Update calendar tool
+  server.registerTool({
+    name: 'updateCalendar',
+    description: 'Update an existing calendar',
+    parameters: {
+      id: { type: 'string', description: 'The ID of the calendar to update' },
+      displayName: { type: 'string', description: 'The new display name for the calendar', required: false },
+      color: { type: 'string', description: 'The new color for the calendar (hex format)', required: false },
+      category: { type: 'string', description: 'Visual category or tag for ADHD-friendly organization', required: false },
+      focusPriority: { type: 'number', description: 'Priority level for ADHD focus management (1-10)', required: false }
+    },
+    execute: async (params: Record<string, unknown>) => {
+      try {
+        if (!params.id) {
+          return { success: false, error: 'Calendar ID is required' };
+        }
+
+        const updates: Record<string, unknown> = {};
+        if (params.displayName !== undefined) updates.displayName = params.displayName;
+        if (params.color !== undefined) updates.color = params.color;
+        if (params.category !== undefined) updates.category = params.category;
+        if (params.focusPriority !== undefined) updates.focusPriority = Number(params.focusPriority);
+
+        if (Object.keys(updates).length === 0) {
+          return { success: false, error: 'No update parameters provided' };
+        }
+
+        const calendar = await calendarService.updateCalendar(params.id, updates);
+        return { success: true, calendar };
+      } catch (error) {
+        console.error('Error in updateCalendar tool:', error);
+        return {
+          success: false,
+          error: 'Failed to update calendar. Please try again later.'
+        };
+      }
+    }
+  });
+
+  // Delete calendar tool
+  server.registerTool({
+    name: 'deleteCalendar',
+    description: 'Delete an existing calendar',
+    parameters: {
+      id: { type: 'string', description: 'The ID of the calendar to delete' }
+    },
+    execute: async (params: Record<string, unknown>) => {
+      try {
+        if (!params.id) {
+          return { success: false, error: 'Calendar ID is required' };
+        }
+
+        const result = await calendarService.deleteCalendar(params.id);
+        return { success: result };
+      } catch (error) {
+        console.error('Error in deleteCalendar tool:', error);
+        return {
+          success: false,
+          error: 'Failed to delete calendar. Please try again later.'
+        };
+      }
+    }
+  });
+}
 
 // Setup Express app
 const app = express();
