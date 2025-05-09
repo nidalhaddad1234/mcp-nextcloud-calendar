@@ -7,7 +7,7 @@ import { loadConfig, validateEnvironmentVariables } from './config/config.js';
 import { healthHandler } from './handlers/health.js';
 import { setupMcpTransport } from './handlers/mcp-transport.js';
 import { getCalendarsHandler, sanitizeError } from './handlers/calendars.js';
-import { CalendarService } from './services/index.js';
+import { CalendarService, EventService } from './services/index.js';
 import * as os from 'node:os';
 
 /**
@@ -65,18 +65,20 @@ if (!validation.calendarReady) {
 
 // Initialize services
 let calendarService: CalendarService | null = null;
+let eventService: EventService | null = null;
 
 // Only try to initialize calendar service if all required environment variables are available
 if (validation.calendarReady) {
   try {
     calendarService = new CalendarService(nextcloudConfig);
-    console.log('Calendar service initialized successfully');
+    eventService = new EventService(nextcloudConfig);
+    console.log('Calendar and Event services initialized successfully');
   } catch (error) {
-    console.error('Failed to initialize calendar service:', error);
+    console.error('Failed to initialize calendar services:', error);
   }
 } else {
   console.warn(
-    'Calendar service not initialized due to missing environment variables:',
+    'Calendar services not initialized due to missing environment variables:',
     ['NEXTCLOUD_BASE_URL', 'NEXTCLOUD_USERNAME', 'NEXTCLOUD_APP_TOKEN']
       .filter((varName) => !process.env[varName])
       .join(', '),
@@ -215,6 +217,365 @@ if (calendarService) {
         };
       } catch (error) {
         return handleCalendarToolError('delete calendar', error);
+      }
+    },
+  );
+}
+
+// Register event tools if event service is available
+if (eventService) {
+  // List events tool
+  server.tool(
+    'listEvents',
+    {
+      calendarId: z.string(),
+      start: z.string().optional(),
+      end: z.string().optional(),
+      limit: z.number().optional(),
+      expandRecurring: z.boolean().optional(),
+      priorityMinimum: z.number().optional(),
+      adhdCategory: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+    },
+    async ({
+      calendarId,
+      start,
+      end,
+      limit,
+      expandRecurring,
+      priorityMinimum,
+      adhdCategory,
+      tags,
+    }) => {
+      try {
+        // Parse dates if provided
+        const startDate = start ? new Date(start) : undefined;
+        const endDate = end ? new Date(end) : undefined;
+
+        // Get events with filtering options
+        const events = await eventService.getEvents(calendarId, {
+          start: startDate,
+          end: endDate,
+          limit,
+          expandRecurring,
+          priorityMinimum,
+          adhdCategory,
+          tags,
+        });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ success: true, events }, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return handleCalendarToolError('retrieve events', error);
+      }
+    },
+  );
+
+  // Get event by ID tool
+  server.tool(
+    'getEventById',
+    {
+      calendarId: z.string(),
+      eventId: z.string(),
+    },
+    async ({ calendarId, eventId }) => {
+      try {
+        const event = await eventService.getEventById(calendarId, eventId);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ success: true, event }, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return handleCalendarToolError('retrieve event', error);
+      }
+    },
+  );
+
+  // Create event tool
+  server.tool(
+    'createEvent',
+    {
+      calendarId: z.string(),
+      title: z.string(),
+      start: z.string(),
+      end: z.string(),
+      isAllDay: z.boolean().optional(),
+      description: z.string().optional(),
+      location: z.string().optional(),
+      color: z.string().optional(),
+      status: z.enum(['confirmed', 'tentative', 'cancelled']).optional(),
+      visibility: z.enum(['public', 'private', 'confidential']).optional(),
+      availability: z.enum(['free', 'busy']).optional(),
+      adhdCategory: z.string().optional(),
+      focusPriority: z.number().optional(),
+      energyLevel: z.number().optional(),
+      categories: z.array(z.string()).optional(),
+      participants: z
+        .array(
+          z.object({
+            email: z.string(),
+            name: z.string().optional(),
+            status: z.enum(['accepted', 'declined', 'tentative', 'needs-action']).optional(),
+            role: z.enum(['required', 'optional']).optional(),
+            type: z.enum(['individual', 'group', 'resource', 'room']).optional(),
+          }),
+        )
+        .optional(),
+      recurrenceRule: z
+        .object({
+          frequency: z.enum(['daily', 'weekly', 'monthly', 'yearly']),
+          interval: z.number().optional(),
+          until: z.string().optional(),
+          count: z.number().optional(),
+          byDay: z.array(z.enum(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'])).optional(),
+          byMonthDay: z.array(z.number()).optional(),
+          byMonth: z.array(z.number()).optional(),
+        })
+        .optional(),
+      reminders: z
+        .array(
+          z.object({
+            type: z.enum(['email', 'notification']),
+            minutesBefore: z.number(),
+          }),
+        )
+        .optional(),
+    },
+    async ({
+      calendarId,
+      title,
+      start,
+      end,
+      isAllDay,
+      description,
+      location,
+      color,
+      status,
+      visibility,
+      availability,
+      adhdCategory,
+      focusPriority,
+      energyLevel,
+      categories,
+      participants,
+      recurrenceRule,
+      reminders,
+    }) => {
+      try {
+        // Parse dates
+        const startDate = new Date(start);
+        const endDate = new Date(end);
+
+        // Handle recurrence rule if provided
+        let processedRecurrenceRule;
+        if (recurrenceRule) {
+          processedRecurrenceRule = {
+            ...recurrenceRule,
+            until: recurrenceRule.until ? new Date(recurrenceRule.until) : undefined,
+          };
+        }
+
+        // Create the event
+        const event = await eventService.createEvent(calendarId, {
+          calendarId,
+          title,
+          start: startDate,
+          end: endDate,
+          isAllDay: isAllDay ?? false,
+          description,
+          location,
+          color,
+          status,
+          visibility,
+          availability,
+          adhdCategory,
+          focusPriority,
+          energyLevel,
+          categories,
+          participants: participants?.map((p) => ({
+            ...p,
+            status: p.status || 'needs-action',
+          })),
+          recurrenceRule: processedRecurrenceRule,
+          reminders,
+        });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ success: true, event }, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return handleCalendarToolError('create event', error);
+      }
+    },
+  );
+
+  // Update event tool
+  server.tool(
+    'updateEvent',
+    {
+      calendarId: z.string(),
+      eventId: z.string(),
+      title: z.string().optional(),
+      start: z.string().optional(),
+      end: z.string().optional(),
+      isAllDay: z.boolean().optional(),
+      description: z.string().optional(),
+      location: z.string().optional(),
+      color: z.string().optional(),
+      status: z.enum(['confirmed', 'tentative', 'cancelled']).optional(),
+      visibility: z.enum(['public', 'private', 'confidential']).optional(),
+      availability: z.enum(['free', 'busy']).optional(),
+      adhdCategory: z.string().optional(),
+      focusPriority: z.number().optional(),
+      energyLevel: z.number().optional(),
+      categories: z.array(z.string()).optional(),
+      participants: z
+        .array(
+          z.object({
+            email: z.string(),
+            name: z.string().optional(),
+            status: z.enum(['accepted', 'declined', 'tentative', 'needs-action']).optional(),
+            role: z.enum(['required', 'optional']).optional(),
+            type: z.enum(['individual', 'group', 'resource', 'room']).optional(),
+          }),
+        )
+        .optional(),
+      recurrenceRule: z
+        .object({
+          frequency: z.enum(['daily', 'weekly', 'monthly', 'yearly']),
+          interval: z.number().optional(),
+          until: z.string().optional(),
+          count: z.number().optional(),
+          byDay: z.array(z.enum(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'])).optional(),
+          byMonthDay: z.array(z.number()).optional(),
+          byMonth: z.array(z.number()).optional(),
+        })
+        .optional(),
+      reminders: z
+        .array(
+          z.object({
+            type: z.enum(['email', 'notification']),
+            minutesBefore: z.number(),
+          }),
+        )
+        .optional(),
+    },
+    async ({
+      calendarId,
+      eventId,
+      title,
+      start,
+      end,
+      isAllDay,
+      description,
+      location,
+      color,
+      status,
+      visibility,
+      availability,
+      adhdCategory,
+      focusPriority,
+      energyLevel,
+      categories,
+      participants,
+      recurrenceRule,
+      reminders,
+    }) => {
+      try {
+        const updates: Record<string, unknown> = {};
+
+        // Add all provided fields to the updates object
+        if (title !== undefined) updates.title = title;
+        if (start !== undefined) updates.start = new Date(start);
+        if (end !== undefined) updates.end = new Date(end);
+        if (isAllDay !== undefined) updates.isAllDay = isAllDay;
+        if (description !== undefined) updates.description = description;
+        if (location !== undefined) updates.location = location;
+        if (color !== undefined) updates.color = color;
+        if (status !== undefined) updates.status = status;
+        if (visibility !== undefined) updates.visibility = visibility;
+        if (availability !== undefined) updates.availability = availability;
+        if (adhdCategory !== undefined) updates.adhdCategory = adhdCategory;
+        if (focusPriority !== undefined) updates.focusPriority = focusPriority;
+        if (energyLevel !== undefined) updates.energyLevel = energyLevel;
+        if (categories !== undefined) updates.categories = categories;
+        if (participants !== undefined)
+          updates.participants = participants.map((p) => ({
+            ...p,
+            status: p.status || 'needs-action',
+          }));
+
+        // Process recurrence rule if provided
+        if (recurrenceRule !== undefined) {
+          const processedRecurrenceRule = {
+            ...recurrenceRule,
+            until: recurrenceRule.until ? new Date(recurrenceRule.until) : undefined,
+          };
+          updates.recurrenceRule = processedRecurrenceRule;
+        }
+
+        if (reminders !== undefined) updates.reminders = reminders;
+
+        // Check if any updates were provided
+        if (Object.keys(updates).length === 0) {
+          return {
+            isError: true,
+            content: [{ type: 'text', text: 'No update parameters provided' }],
+          };
+        }
+
+        // Update the event
+        const event = await eventService.updateEvent(calendarId, eventId, updates);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ success: true, event }, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return handleCalendarToolError('update event', error);
+      }
+    },
+  );
+
+  // Delete event tool
+  server.tool(
+    'deleteEvent',
+    {
+      calendarId: z.string(),
+      eventId: z.string(),
+    },
+    async ({ calendarId, eventId }) => {
+      try {
+        const result = await eventService.deleteEvent(calendarId, eventId);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ success: result }, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return handleCalendarToolError('delete event', error);
       }
     },
   );
