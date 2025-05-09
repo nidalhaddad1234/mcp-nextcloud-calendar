@@ -111,8 +111,11 @@ export class CalendarHttpClient {
    */
   async mkcalendar(calendarId: string, data: string): Promise<void> {
     try {
-      const calendarUrl = this.caldavUrl + calendarId + '/';
-      logger.debug(`Making MKCALENDAR request for calendar ${calendarId}`);
+      // Validate calendar ID for path safety
+      const validatedCalendarId = this.validateComponentId(calendarId, 'Calendar');
+
+      const calendarUrl = `${this.caldavUrl}${validatedCalendarId}/`;
+      logger.debug(`Making MKCALENDAR request for calendar ${validatedCalendarId}`);
 
       await axios({
         method: 'MKCALENDAR',
@@ -137,8 +140,11 @@ export class CalendarHttpClient {
    */
   async proppatch(calendarId: string, data: string): Promise<void> {
     try {
-      const calendarUrl = this.caldavUrl + calendarId + '/';
-      logger.debug(`Making PROPPATCH request for calendar ${calendarId}`);
+      // Validate calendar ID for path safety
+      const validatedCalendarId = this.validateComponentId(calendarId, 'Calendar');
+
+      const calendarUrl = `${this.caldavUrl}${validatedCalendarId}/`;
+      logger.debug(`Making PROPPATCH request for calendar ${validatedCalendarId}`);
 
       await axios({
         method: 'PROPPATCH',
@@ -161,8 +167,11 @@ export class CalendarHttpClient {
    */
   async deleteCalendar(calendarId: string): Promise<void> {
     try {
-      const calendarUrl = this.caldavUrl + calendarId + '/';
-      logger.debug(`Making DELETE request for calendar ${calendarId}`);
+      // Validate calendar ID for path safety
+      const validatedCalendarId = this.validateComponentId(calendarId, 'Calendar');
+
+      const calendarUrl = `${this.caldavUrl}${validatedCalendarId}/`;
+      logger.debug(`Making DELETE request for calendar ${validatedCalendarId}`);
 
       await axios({
         method: 'DELETE',
@@ -185,8 +194,11 @@ export class CalendarHttpClient {
    */
   async calendarReport(calendarId: string, data: string): Promise<string> {
     try {
-      const calendarUrl = this.caldavUrl + calendarId + '/';
-      logger.debug(`Making REPORT request for calendar ${calendarId}`);
+      // Validate calendar ID for path safety
+      const validatedCalendarId = this.validateComponentId(calendarId, 'Calendar');
+
+      const calendarUrl = `${this.caldavUrl}${validatedCalendarId}/`;
+      logger.debug(`Making REPORT request for calendar ${validatedCalendarId}`);
 
       const response = await axios({
         method: 'REPORT',
@@ -232,6 +244,32 @@ export class CalendarHttpClient {
   }
 
   /**
+   * Validate a component ID (calendar ID or event ID) for path safety
+   * @param id The ID to validate
+   * @param componentType The type of component (for error messages)
+   * @returns The validated ID if it passes validation
+   * @throws Error if the ID contains unsafe characters
+   * @private Internal utility method
+   */
+  private validateComponentId(id: string, componentType: string): string {
+    // Validate that the ID only contains safe characters (alphanumeric, dash, underscore, period)
+    const safeIdRegex = /^[a-zA-Z0-9_.-]+$/;
+
+    if (!id) {
+      throw new Error(`${componentType} ID is required`);
+    }
+
+    if (!safeIdRegex.test(id)) {
+      logger.error(`Potentially unsafe ${componentType} ID detected: ${id}`);
+      throw new Error(
+        `Invalid ${componentType} ID format: Only alphanumeric characters, dash, underscore, and period are allowed`,
+      );
+    }
+
+    return id;
+  }
+
+  /**
    * Send an event creation or update request
    * @param calendarId The ID of the calendar
    * @param eventId The ID of the event
@@ -246,11 +284,18 @@ export class CalendarHttpClient {
     iCalData: string,
     etag?: string,
   ): Promise<boolean> {
-    const eventUrl = this.caldavUrl + calendarId + '/' + eventId + '.ics';
+    // Validate IDs for path safety
+    const validatedCalendarId = this.validateComponentId(calendarId, 'Calendar');
+    const validatedEventId = this.validateComponentId(eventId, 'Event');
+
+    // Construct URL with validated IDs
+    const eventUrl = `${this.caldavUrl}${validatedCalendarId}/${validatedEventId}.ics`;
     const isUpdate = etag ? true : false;
     const logAction = isUpdate ? 'update' : 'create';
 
-    logger.debug(`Making PUT request to ${logAction} event ${eventId} in calendar ${calendarId}`);
+    logger.debug(
+      `Making PUT request to ${logAction} event ${validatedEventId} in calendar ${validatedCalendarId}`,
+    );
 
     try {
       // Set up conditional headers based on whether this is a create or update operation
@@ -271,7 +316,7 @@ export class CalendarHttpClient {
 
       return true;
     } catch (error) {
-      logger.error(`PUT request failed to ${logAction} event ${eventId}:`, error);
+      logger.error(`PUT request failed to ${logAction} event ${validatedEventId}:`, error);
       throw this.handleHttpError(error, `Failed to ${logAction} event`);
     }
   }
@@ -312,8 +357,14 @@ export class CalendarHttpClient {
    */
   async deleteEvent(calendarId: string, eventId: string): Promise<boolean> {
     try {
-      const eventUrl = this.caldavUrl + calendarId + '/' + eventId + '.ics';
-      logger.debug(`Making DELETE request for event ${eventId} in calendar ${calendarId}`);
+      // Validate IDs for path safety
+      const validatedCalendarId = this.validateComponentId(calendarId, 'Calendar');
+      const validatedEventId = this.validateComponentId(eventId, 'Event');
+
+      const eventUrl = `${this.caldavUrl}${validatedCalendarId}/${validatedEventId}.ics`;
+      logger.debug(
+        `Making DELETE request for event ${validatedEventId} in calendar ${validatedCalendarId}`,
+      );
 
       await axios({
         method: 'DELETE',

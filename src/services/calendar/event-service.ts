@@ -35,6 +35,30 @@ export class EventService {
   }
 
   /**
+   * Validate a calendar ID
+   * @param calendarId The calendar ID to validate
+   * @throws Error if the calendar ID is invalid
+   * @private Internal utility method
+   */
+  private validateCalendarId(calendarId: string): void {
+    if (!calendarId) {
+      throw new Error('Calendar ID is required');
+    }
+
+    // Calendar IDs should follow a specific format:
+    // - Only alphanumeric characters, hyphens, underscores, and periods
+    // - Cannot contain path traversal sequences
+    const safeIdRegex = /^[a-zA-Z0-9_.-]+$/;
+
+    if (!safeIdRegex.test(calendarId)) {
+      this.logger.error(`Invalid calendar ID format: ${calendarId}`);
+      throw new Error(
+        'Invalid calendar ID format: Only alphanumeric characters, dash, underscore, and period are allowed',
+      );
+    }
+  }
+
+  /**
    * Get events from a calendar with optional filtering
    * @param calendarId ID of the calendar to get events from
    * @param options Optional filtering parameters
@@ -56,9 +80,7 @@ export class EventService {
 
     try {
       // Validate calendar ID
-      if (!calendarId) {
-        throw new Error('Calendar ID is required');
-      }
+      this.validateCalendarId(calendarId);
 
       // Build the REPORT request for calendar events
       const reportXml = XmlUtils.buildEventsReportRequest(options?.start, options?.end);
@@ -186,6 +208,30 @@ export class EventService {
   }
 
   /**
+   * Validate an event ID
+   * @param eventId The event ID to validate
+   * @throws Error if the event ID is invalid
+   * @private Internal utility method
+   */
+  private validateEventId(eventId: string): void {
+    if (!eventId) {
+      throw new Error('Event ID is required');
+    }
+
+    // Event IDs should follow a specific format:
+    // - Only alphanumeric characters, hyphens, underscores, and periods
+    // - Cannot contain path traversal sequences
+    const safeIdRegex = /^[a-zA-Z0-9_.-]+$/;
+
+    if (!safeIdRegex.test(eventId)) {
+      this.logger.error(`Invalid event ID format: ${eventId}`);
+      throw new Error(
+        'Invalid event ID format: Only alphanumeric characters, dash, underscore, and period are allowed',
+      );
+    }
+  }
+
+  /**
    * Get a specific event by ID
    * @param calendarId ID of the calendar containing the event
    * @param eventId ID of the event to retrieve
@@ -196,13 +242,8 @@ export class EventService {
 
     try {
       // Validate input
-      if (!calendarId) {
-        throw new Error('Calendar ID is required');
-      }
-
-      if (!eventId) {
-        throw new Error('Event ID is required');
-      }
+      this.validateCalendarId(calendarId);
+      this.validateEventId(eventId);
 
       // First approach: Try direct GET request to the event URL
       const eventUrl = `${this.httpClient.getCalDavUrl()}${calendarId}/${eventId}.ics`;
@@ -299,9 +340,7 @@ export class EventService {
 
     try {
       // Validate input
-      if (!calendarId) {
-        throw new Error('Calendar ID is required');
-      }
+      this.validateCalendarId(calendarId);
 
       if (!event.title) {
         throw new Error('Event title is required');
@@ -375,13 +414,8 @@ export class EventService {
 
     try {
       // Validate input
-      if (!calendarId) {
-        throw new Error('Calendar ID is required');
-      }
-
-      if (!eventId) {
-        throw new Error('Event ID is required');
-      }
+      this.validateCalendarId(calendarId);
+      this.validateEventId(eventId);
 
       if (!updates || Object.keys(updates).length === 0) {
         throw new Error('No updates provided');
@@ -467,6 +501,9 @@ export class EventService {
     start?: Date,
     end?: Date,
   ): Promise<Event[]> {
+    // Validate calendar ID
+    this.validateCalendarId(calendarId);
+
     // Default dates if not provided
     const startDate = start || new Date();
     const endDate = end || new Date(startDate.getTime() + 90 * 24 * 60 * 60 * 1000); // Default to 90 days ahead
@@ -563,13 +600,8 @@ export class EventService {
 
     try {
       // Validate input
-      if (!calendarId) {
-        throw new Error('Calendar ID is required');
-      }
-
-      if (!eventId) {
-        throw new Error('Event ID is required');
-      }
+      this.validateCalendarId(calendarId);
+      this.validateEventId(eventId);
 
       // Verify the event exists before attempting to delete it
       try {

@@ -327,51 +327,82 @@ function parseEventComponent(eventData: string, calendarId: string): Event | nul
     const summary = props['SUMMARY'] || 'Untitled Event';
 
     // Parse dates
-    let start: Date | null = null;
-    let end: Date | null = null;
+    let start: Date;
+    let end: Date;
     let isAllDay = false;
 
-    // Handle all-day events
-    if (lines.some((line) => line.startsWith('DTSTART;VALUE=DATE:'))) {
-      isAllDay = true;
-      const startDate = lines.find((line) => line.startsWith('DTSTART'))?.split(':')[1];
-      const endDate = lines.find((line) => line.startsWith('DTEND'))?.split(':')[1];
+    try {
+      // Handle all-day events
+      if (lines.some((line) => line.startsWith('DTSTART;VALUE=DATE:'))) {
+        isAllDay = true;
+        const startDate = lines.find((line) => line.startsWith('DTSTART'))?.split(':')[1];
+        const endDate = lines.find((line) => line.startsWith('DTEND'))?.split(':')[1];
 
-      if (startDate) {
+        if (!startDate) {
+          throw new DateParsingError('Start date is required for event');
+        }
+
         start = parseICalDate(startDate);
-      }
 
-      if (endDate) {
-        // For all-day events, the end date is exclusive
-        end = parseICalDate(endDate);
-        if (end) {
+        if (!endDate) {
+          // If no end date provided, default to same as start date
+          end = new Date(start);
+        } else {
+          // For all-day events, the end date is exclusive
+          end = parseICalDate(endDate);
           end.setDate(end.getDate() - 1);
         }
-      }
-    } else {
-      // Regular events with time
-      const startTime = props['DTSTART'];
-      const endTime = props['DTEND'];
+      } else {
+        // Regular events with time
+        const startTime = props['DTSTART'];
+        const endTime = props['DTEND'];
 
-      if (startTime) {
+        if (!startTime) {
+          throw new DateParsingError('Start time is required for event');
+        }
+
         start = parseICalDateTime(startTime);
-      }
 
-      if (endTime) {
-        end = parseICalDateTime(endTime);
+        if (!endTime) {
+          // If no end time provided, default to 1 hour after start
+          end = new Date(start);
+          end.setHours(end.getHours() + 1);
+        } else {
+          end = parseICalDateTime(endTime);
+        }
       }
+    } catch (error) {
+      // If we couldn't parse the dates, log error and return null
+      if (error instanceof DateParsingError) {
+        logger.warn(`Failed to parse event dates: ${error.message}`);
+      } else {
+        logger.warn(`Failed to parse event dates: ${(error as Error).message}`);
+      }
+      return null;
     }
 
-    // If we couldn't parse the dates, can't create a valid event
-    if (!start || !end) return null;
-
     // Parse creation/modification dates
-    const created = props['CREATED']
-      ? parseICalDateTime(props['CREATED']) || new Date()
-      : new Date();
-    const lastModified = props['LAST-MODIFIED']
-      ? parseICalDateTime(props['LAST-MODIFIED']) || new Date()
-      : new Date();
+    let created: Date;
+    let lastModified: Date;
+
+    try {
+      if (props['CREATED']) {
+        created = parseICalDateTime(props['CREATED']);
+      } else {
+        created = new Date();
+      }
+
+      if (props['LAST-MODIFIED']) {
+        lastModified = parseICalDateTime(props['LAST-MODIFIED']);
+      } else {
+        lastModified = new Date();
+      }
+    } catch (error) {
+      // If parsing fails, use current date/time
+      logger.warn(`Failed to parse created/modified dates: ${(error as Error).message}`);
+      created = new Date();
+      lastModified = new Date();
+    }
 
     // Create basic event
     const event: Event = {
@@ -465,9 +496,20 @@ function parseEventComponent(eventData: string, calendarId: string): Event | nul
 }
 
 /**
+ * Custom error class for date parsing issues
+ */
+export class DateParsingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DateParsingError';
+  }
+}
+
+/**
  * Parse a date from iCalendar format (e.g., "20210315" for March 15, 2021)
  * @param dateStr The date string in iCalendar format
- * @returns A Date object or null if invalid
+ * @returns A Date object
+ * @throws DateParsingError if the date string is invalid
  *
  * Performs extensive validation of iCalendar date strings:
  * 1. Format must be exactly YYYYMMDD (8 digits)
@@ -475,11 +517,11 @@ function parseEventComponent(eventData: string, calendarId: string): Event | nul
  * 3. Month must be 01-12
  * 4. Day must be valid for the given month and year (accounting for leap years)
  */
-function parseICalDate(dateStr: string): Date | null {
+function parseICalDate(dateStr: string): Date {
   // Validate input
   if (!dateStr) {
     logger.warn('parseICalDate: Empty or undefined date string');
-    return null;
+    throw new DateParsingError('Date string is required');
   }
 
   // Clean the string of any whitespace or non-alphanumeric characters
@@ -488,7 +530,7 @@ function parseICalDate(dateStr: string): Date | null {
   // Check format: exact 8 characters for YYYYMMDD
   if (cleanStr.length !== 8 || !/^\d{8}$/.test(cleanStr)) {
     logger.warn(`parseICalDate: Invalid date format: "${dateStr}"`);
-    return null;
+    throw new DateParsingError(`Invalid date format: "${dateStr}". Expected format is YYYYMMDD.`);
   }
 
   try {
@@ -501,22 +543,22 @@ function parseICalDate(dateStr: string): Date | null {
       logger.warn(
         `parseICalDate: Found NaN values in date components: year=${year}, month=${month + 1}, day=${day}`,
       );
-      return null;
+      throw new DateParsingError(`Invalid date components in "${dateStr}"`);
     }
 
     if (year < 1900 || year > 2100) {
       logger.warn(`parseICalDate: Year out of range: ${year}`);
-      return null;
+      throw new DateParsingError(`Year out of range: ${year}. Must be between 1900 and 2100.`);
     }
 
     if (month < 0 || month > 11) {
       logger.warn(`parseICalDate: Month out of range: ${month + 1}`);
-      return null;
+      throw new DateParsingError(`Month out of range: ${month + 1}. Must be between 1 and 12.`);
     }
 
     if (day < 1 || day > 31) {
       logger.warn(`parseICalDate: Day out of range: ${day}`);
-      return null;
+      throw new DateParsingError(`Day out of range: ${day}. Must be between 1 and 31.`);
     }
 
     // Validate days per month (accounting for leap years)
@@ -536,7 +578,7 @@ function parseICalDate(dateStr: string): Date | null {
     ];
     if (day > maxDaysInMonth[month]) {
       logger.warn(`parseICalDate: Invalid day (${day}) for month ${month + 1} in year ${year}`);
-      return null;
+      throw new DateParsingError(`Invalid day (${day}) for month ${month + 1} in year ${year}`);
     }
 
     // Create date with validated components
@@ -548,21 +590,27 @@ function parseICalDate(dateStr: string): Date | null {
       logger.warn(
         `parseICalDate: Date object construction inconsistency for: ${year}-${month + 1}-${day}, possible invalid date combination`,
       );
-      return null;
+      throw new DateParsingError(`Invalid date combination: ${year}-${month + 1}-${day}`);
     }
 
     return date;
   } catch (error) {
+    // Re-throw DateParsingErrors
+    if (error instanceof DateParsingError) {
+      throw error;
+    }
+
     // Handle any unexpected errors from Date construction
     logger.error(`parseICalDate: Unexpected error parsing date "${dateStr}":`, error);
-    return null;
+    throw new DateParsingError(`Failed to parse date "${dateStr}": ${(error as Error).message}`);
   }
 }
 
 /**
  * Parse a date and time from iCalendar format (e.g., "20210315T143000Z")
  * @param dateTimeStr The date-time string in iCalendar format
- * @returns A Date object or null if invalid
+ * @returns A Date object
+ * @throws DateParsingError if the datetime string is invalid
  *
  * Supports multiple iCalendar datetime formats:
  * 1. YYYYMMDD - Date only (no time component)
@@ -577,11 +625,11 @@ function parseICalDate(dateStr: string): Date | null {
  * - Timezone handling (UTC vs local time)
  * - Date integrity verification after construction
  */
-function parseICalDateTime(dateTimeStr: string): Date | null {
+function parseICalDateTime(dateTimeStr: string): Date {
   // Validate input
   if (!dateTimeStr) {
     logger.warn('parseICalDateTime: Empty or undefined datetime string');
-    return null;
+    throw new DateParsingError('Datetime string is required');
   }
 
   // Trim any whitespace and normalize to uppercase (for Z indicator)
@@ -592,7 +640,9 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
     logger.warn(
       `parseICalDateTime: String too short (${inputStr.length}), minimum 8 characters required: "${dateTimeStr}"`,
     );
-    return null;
+    throw new DateParsingError(
+      `Invalid datetime string: "${dateTimeStr}". Too short (minimum 8 characters required).`,
+    );
   }
 
   // Check for valid characters (digits, T separator, Z for UTC)
@@ -601,7 +651,9 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
     logger.warn(
       `parseICalDateTime: Invalid characters in datetime string, only digits, T, and Z allowed: "${dateTimeStr}"`,
     );
-    return null;
+    throw new DateParsingError(
+      `Invalid characters in datetime string: "${dateTimeStr}". Only digits, T, and Z are allowed.`,
+    );
   }
 
   // Structure check: If contains T, it must be in position 9 or later (after date part)
@@ -610,7 +662,9 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
     logger.warn(
       `parseICalDateTime: T separator in wrong position (${tIndex}), must be after date part: "${dateTimeStr}"`,
     );
-    return null;
+    throw new DateParsingError(
+      `Invalid T separator position in "${dateTimeStr}". T must be after date part.`,
+    );
   }
 
   try {
@@ -639,13 +693,15 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
     // Validate date part (should be 8 digits for YYYYMMDD)
     if (dateStr.length !== 8 || !/^\d{8}$/.test(dateStr)) {
       logger.warn(`parseICalDateTime: Invalid date part: "${dateStr}"`);
-      return null;
+      throw new DateParsingError(`Invalid date part in datetime string: "${dateStr}"`);
     }
 
     // Validate time part (should be 2, 4, or 6 digits for HH, HHMM, or HHMMSS)
     if (![2, 4, 6].includes(timeStr.length) || !/^\d+$/.test(timeStr)) {
       logger.warn(`parseICalDateTime: Invalid time part: "${timeStr}"`);
-      return null;
+      throw new DateParsingError(
+        `Invalid time part in datetime string: "${timeStr}". Should be 2, 4, or 6 digits.`,
+      );
     }
 
     // Parse date components
@@ -658,23 +714,23 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
       logger.warn(
         `parseICalDateTime: Found NaN in date components: year=${year}, month=${month + 1}, day=${day}`,
       );
-      return null;
+      throw new DateParsingError(`Invalid date components in "${dateStr}"`);
     }
 
     // Validate date components
     if (year < 1900 || year > 2100) {
       logger.warn(`parseICalDateTime: Year out of range: ${year}`);
-      return null;
+      throw new DateParsingError(`Year out of range: ${year}. Must be between 1900 and 2100.`);
     }
 
     if (month < 0 || month > 11) {
       logger.warn(`parseICalDateTime: Month out of range: ${month + 1}`);
-      return null;
+      throw new DateParsingError(`Month out of range: ${month + 1}. Must be between 1 and 12.`);
     }
 
     if (day < 1 || day > 31) {
       logger.warn(`parseICalDateTime: Day out of range: ${day}`);
-      return null;
+      throw new DateParsingError(`Day out of range: ${day}. Must be between 1 and 31.`);
     }
 
     // Validate days per month (accounting for leap years)
@@ -694,7 +750,7 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
     ];
     if (day > maxDaysInMonth[month]) {
       logger.warn(`parseICalDateTime: Invalid day (${day}) for month ${month + 1} in year ${year}`);
-      return null;
+      throw new DateParsingError(`Invalid day (${day}) for month ${month + 1} in year ${year}`);
     }
 
     // Parse time components with defaults
@@ -706,7 +762,9 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
       hour = parseInt(timeStr.substring(0, 2), 10);
       if (isNaN(hour) || hour < 0 || hour > 23) {
         logger.warn(`parseICalDateTime: Hour invalid or out of range: ${timeStr.substring(0, 2)}`);
-        return null;
+        throw new DateParsingError(
+          `Hour invalid or out of range: ${timeStr.substring(0, 2)}. Must be between 0 and 23.`,
+        );
       }
     }
 
@@ -716,7 +774,9 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
         logger.warn(
           `parseICalDateTime: Minute invalid or out of range: ${timeStr.substring(2, 4)}`,
         );
-        return null;
+        throw new DateParsingError(
+          `Minute invalid or out of range: ${timeStr.substring(2, 4)}. Must be between 0 and 59.`,
+        );
       }
     }
 
@@ -726,7 +786,9 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
         logger.warn(
           `parseICalDateTime: Second invalid or out of range: ${timeStr.substring(4, 6)}`,
         );
-        return null;
+        throw new DateParsingError(
+          `Second invalid or out of range: ${timeStr.substring(4, 6)}. Must be between 0 and 59.`,
+        );
       }
     }
 
@@ -751,7 +813,9 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
         logger.warn(
           `parseICalDateTime: Date object inconsistency for UTC: ${year}-${month + 1}-${day} ${hour}:${minute}:${second}`,
         );
-        return null;
+        throw new DateParsingError(
+          `Invalid date combination: ${year}-${month + 1}-${day} ${hour}:${minute}:${second}`,
+        );
       }
     } else {
       if (
@@ -765,18 +829,27 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
         logger.warn(
           `parseICalDateTime: Date object inconsistency for local time: ${year}-${month + 1}-${day} ${hour}:${minute}:${second}`,
         );
-        return null;
+        throw new DateParsingError(
+          `Invalid date combination: ${year}-${month + 1}-${day} ${hour}:${minute}:${second}`,
+        );
       }
     }
 
     return date;
   } catch (error) {
+    // Re-throw DateParsingErrors
+    if (error instanceof DateParsingError) {
+      throw error;
+    }
+
     // Detailed error reporting for more diagnosable issues
     logger.error(
       `parseICalDateTime: Error parsing datetime "${dateTimeStr}": ${error instanceof Error ? error.message : String(error)}`,
       error,
     );
-    return null;
+    throw new DateParsingError(
+      `Failed to parse datetime "${dateTimeStr}": ${(error as Error).message}`,
+    );
   }
 }
 
@@ -878,16 +951,42 @@ function generateAlarm(reminder: EventReminder): string {
 /**
  * Extract an email address from a CAL-ADDRESS value
  * @param calAddress The CAL-ADDRESS value (e.g., "MAILTO:user@example.com")
- * @returns The extracted email address
+ * @returns The extracted email address or empty string if invalid
  */
 function extractEmailFromCalAddress(calAddress: string): string {
-  const mailtoPrefix = 'MAILTO:';
-
-  if (calAddress.includes(mailtoPrefix)) {
-    return calAddress.substring(calAddress.lastIndexOf(mailtoPrefix) + mailtoPrefix.length);
+  if (!calAddress) {
+    logger.warn('Empty CAL-ADDRESS value provided to extractEmailFromCalAddress');
+    return '';
   }
 
-  return calAddress;
+  const mailtoPrefix = 'MAILTO:';
+  let email: string;
+
+  if (calAddress.includes(mailtoPrefix)) {
+    email = calAddress.substring(calAddress.lastIndexOf(mailtoPrefix) + mailtoPrefix.length);
+  } else {
+    email = calAddress;
+  }
+
+  // Validate the extracted email address
+  // Basic validation using a regex pattern for email validation
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+  if (!emailRegex.test(email)) {
+    logger.warn(`Invalid email address format in CAL-ADDRESS: "${email}"`);
+    // Return the extracted value anyway but log a warning
+    // This ensures backward compatibility with existing data
+  }
+
+  // Sanitize the email address by removing potential dangerous characters
+  // Allow only alphanumeric characters, @, dots, hyphens, underscores, and plus signs
+  const sanitizedEmail = email.replace(/[^\w@.\-+]/g, '');
+
+  if (sanitizedEmail !== email) {
+    logger.warn(`Email address sanitized from "${email}" to "${sanitizedEmail}"`);
+  }
+
+  return sanitizedEmail;
 }
 
 /**
