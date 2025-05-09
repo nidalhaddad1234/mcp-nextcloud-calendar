@@ -7,6 +7,8 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { v4 as uuidv4 } from 'uuid';
 // Import Node.js globals explicitly for ESLint
 import { setInterval, clearInterval } from 'node:timers';
+// Import config for keep-alive settings
+import { loadConfig } from '../config/config.js';
 
 /**
  * Model Context Protocol Transport Implementation
@@ -38,6 +40,76 @@ import { setInterval, clearInterval } from 'node:timers';
 // Store transports by session ID
 const transports: { [sessionId: string]: SSEServerTransport } = {};
 
+// Global map to track keep-alive interval timers
+const keepAliveTimers: { [sessionId: string]: ReturnType<typeof setInterval> } = {};
+
+// Get keep-alive interval from config
+const config = loadConfig();
+const KEEP_ALIVE_INTERVAL = config.server.keepAliveInterval;
+
+/**
+ * Starts a keep-alive pinger for a specific session
+ * @param sessionId The session ID to track
+ * @param res The Express response object to write keep-alive events to
+ */
+function startKeepAlivePinger(sessionId: string, res: Response): void {
+  // Clear existing timer if there is one
+  if (keepAliveTimers[sessionId]) {
+    clearInterval(keepAliveTimers[sessionId]);
+    console.log(`Cleared existing keep-alive timer for session ${sessionId}`);
+  }
+
+  // Create a new keep-alive interval
+  keepAliveTimers[sessionId] = setInterval(() => {
+    try {
+      if (transports[sessionId]) {
+        res.write('event: ping\ndata: keep-alive\n\n');
+        console.log(`Sent keep-alive ping for session ${sessionId}`);
+      } else {
+        stopKeepAlivePinger(sessionId);
+      }
+    } catch (error) {
+      console.error(`Error sending keep-alive ping for session ${sessionId}:`, error);
+      stopKeepAlivePinger(sessionId);
+    }
+  }, KEEP_ALIVE_INTERVAL);
+
+  console.log(
+    `Started keep-alive pinger for session ${sessionId} (interval: ${KEEP_ALIVE_INTERVAL}ms)`,
+  );
+}
+
+/**
+ * Stops a keep-alive pinger for a specific session
+ * @param sessionId The session ID to stop pinging
+ */
+function stopKeepAlivePinger(sessionId: string): void {
+  if (keepAliveTimers[sessionId]) {
+    clearInterval(keepAliveTimers[sessionId]);
+    delete keepAliveTimers[sessionId];
+    console.log(`Stopped keep-alive pinger for session ${sessionId}`);
+  }
+}
+
+/**
+ * Cleans up resources when a session is closed
+ * @param sessionId The session ID to clean up
+ */
+function cleanupSession(sessionId: string): void {
+  console.log(`Cleaning up session ${sessionId}`);
+
+  // Stop keep-alive pinger
+  stopKeepAlivePinger(sessionId);
+
+  // Remove transport
+  if (transports[sessionId]) {
+    delete transports[sessionId];
+    console.log(`Removed transport for session ${sessionId}`);
+  }
+
+  console.log(`Active sessions after cleanup: ${Object.keys(transports).length}`);
+}
+
 // Streamable HTTP transport handlers
 export function setupMcpTransport(server: McpServer) {
   // Unified MCP endpoint - handles both GET for SSE and POST for messages
@@ -53,7 +125,7 @@ export function setupMcpTransport(server: McpServer) {
     if (req.method === 'DELETE') {
       const sessionId = req.headers['mcp-session-id'] as string;
       if (sessionId && transports[sessionId]) {
-        delete transports[sessionId];
+        cleanupSession(sessionId);
         res.status(202).end();
         return;
       }
@@ -93,37 +165,15 @@ export function setupMcpTransport(server: McpServer) {
         // Add a close event handler
         res.on('close', () => {
           console.log(`Streamable HTTP SSE connection closed for sessionId: ${sessionId}`);
-
-          // If the transport is still in the registry, remove it
-          if (transports[sessionId]) {
-            delete transports[sessionId];
-            console.log(`Removed transport for session ${sessionId}`);
-          }
-
-          console.log(`Active sessions after close: ${Object.keys(transports).length}`);
+          cleanupSession(sessionId);
         });
 
         // Connect to the MCP server - this will start the transport automatically
         await server.connect(transport);
         console.log(`Streamable HTTP SSE transport connected to MCP server`);
 
-        // Send a keep-alive ping every 30 seconds
-        const keepAlivePinger = setInterval(() => {
-          try {
-            if (transports[sessionId]) {
-              res.write('event: ping\ndata: keep-alive\n\n');
-              console.log(`Sent keep-alive ping for session ${sessionId}`);
-            } else {
-              clearInterval(keepAlivePinger);
-              console.log(
-                `Cleared keep-alive pinger for session ${sessionId} (transport no longer active)`,
-              );
-            }
-          } catch (error) {
-            console.error(`Error sending keep-alive ping for session ${sessionId}:`, error);
-            clearInterval(keepAlivePinger);
-          }
-        }, 30000);
+        // Start keep-alive pinger
+        startKeepAlivePinger(sessionId, res);
       } catch (error) {
         console.error('Error establishing Streamable HTTP SSE connection:', error);
         if (!res.headersSent) {
@@ -219,37 +269,15 @@ export function setupMcpTransport(server: McpServer) {
       // Add a close event handler to clean up resources when the connection closes
       res.on('close', () => {
         console.log(`Legacy SSE connection closed for sessionId: ${sessionId}`);
-
-        // If the transport is still in the registry, remove it
-        if (transports[sessionId]) {
-          delete transports[sessionId];
-          console.log(`Removed transport for session ${sessionId}`);
-        }
-
-        console.log(`Active sessions after close: ${Object.keys(transports).length}`);
+        cleanupSession(sessionId);
       });
 
       // Connect to the MCP server - this will start the transport automatically
       await server.connect(transport);
       console.log(`Legacy SSE transport connected to MCP server`);
 
-      // Send a keep-alive ping every 30 seconds
-      const keepAlivePinger = setInterval(() => {
-        try {
-          if (transports[sessionId]) {
-            res.write('event: ping\ndata: keep-alive\n\n');
-            console.log(`Sent keep-alive ping for session ${sessionId}`);
-          } else {
-            clearInterval(keepAlivePinger);
-            console.log(
-              `Cleared keep-alive pinger for session ${sessionId} (transport no longer active)`,
-            );
-          }
-        } catch (error) {
-          console.error(`Error sending keep-alive ping for session ${sessionId}:`, error);
-          clearInterval(keepAlivePinger);
-        }
-      }, 30000);
+      // Start keep-alive pinger
+      startKeepAlivePinger(sessionId, res);
     } catch (error) {
       console.error('Error establishing SSE connection:', error);
       res.end();
@@ -301,5 +329,6 @@ export function setupMcpTransport(server: McpServer) {
     sseHandler, // Legacy SSE handler
     messageHandler, // Legacy message handler
     transports,
+    keepAliveTimers, // Export timers for testing and debugging
   };
 }
