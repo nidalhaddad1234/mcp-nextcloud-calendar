@@ -11,7 +11,7 @@
     "start": "node build/index.js",
     "dev": "tsc --skipLibCheck && node build/index.js",
     "dev:watch": "tsc --skipLibCheck --watch",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test": "NODE_ENV=test node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "lint": "eslint ./src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",

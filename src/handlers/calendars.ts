@@ -10,11 +10,11 @@ import { CalendarService } from '../services/index.js';
  * @param error The original error
  * @returns A sanitized error object with message and status code
  */
-function sanitizeError(error: unknown): { message: string; status: number } {
+export function sanitizeError(error: unknown): { message: string; status: number } {
   // Default error response
   const defaultError = {
     message: 'An unexpected error occurred. Please try again later.',
-    status: 500
+    status: 500,
   };
 
   // If no error provided, return default
@@ -27,11 +27,13 @@ function sanitizeError(error: unknown): { message: string; status: number } {
   const errorMsg = err.message || '';
 
   // Authorization errors
-  if (errorMsg.toLowerCase().includes('unauthorized') ||
-      errorMsg.toLowerCase().includes('permission')) {
+  if (
+    errorMsg.toLowerCase().includes('unauthorized') ||
+    errorMsg.toLowerCase().includes('permission')
+  ) {
     return {
       message: 'You do not have permission to perform this action.',
-      status: 403
+      status: 403,
     };
   }
 
@@ -39,7 +41,7 @@ function sanitizeError(error: unknown): { message: string; status: number } {
   if (errorMsg.toLowerCase().includes('not found')) {
     return {
       message: 'The requested calendar was not found.',
-      status: 404
+      status: 404,
     };
   }
 
@@ -47,16 +49,15 @@ function sanitizeError(error: unknown): { message: string; status: number } {
   if (errorMsg.toLowerCase().includes('locked')) {
     return {
       message: 'The calendar is currently locked. Please try again later.',
-      status: 423
+      status: 423,
     };
   }
 
   // Validation errors
-  if (errorMsg.toLowerCase().includes('invalid') ||
-      errorMsg.toLowerCase().includes('required')) {
+  if (errorMsg.toLowerCase().includes('invalid') || errorMsg.toLowerCase().includes('required')) {
     return {
       message: 'Invalid request data. Please check your input and try again.',
-      status: 400
+      status: 400,
     };
   }
 
@@ -116,11 +117,11 @@ export function createCalendarHandler(calendarService: CalendarService | null) {
           canRead: true,
           canWrite: true,
           canShare: true,
-          canDelete: true
+          canDelete: true,
         },
         category: calendarData.category,
         focusPriority: calendarData.focusPriority,
-        metadata: calendarData.metadata
+        metadata: calendarData.metadata,
       };
 
       calendarService
@@ -166,11 +167,11 @@ export function updateCalendarHandler(calendarService: CalendarService | null) {
       color: updates.color,
       category: updates.category,
       focusPriority: updates.focusPriority,
-      metadata: updates.metadata
+      metadata: updates.metadata,
     };
 
     // Clean undefined values
-    Object.keys(safeUpdates).forEach(key => {
+    Object.keys(safeUpdates).forEach((key) => {
       if (safeUpdates[key as keyof typeof safeUpdates] === undefined) {
         delete safeUpdates[key as keyof typeof safeUpdates];
       }

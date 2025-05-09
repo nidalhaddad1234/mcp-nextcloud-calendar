@@ -13,4 +13,7 @@ export default {
       },
     ],
   },
+  setupFilesAfterEnv: ['./jest.setup.js'],
+  maxWorkers: 1,  // Run tests serially to avoid concurrency issues
+  forceExit: true // Force Jest to exit after all tests are complete
 };

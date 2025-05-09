@@ -43,6 +43,20 @@ const transports: { [sessionId: string]: SSEServerTransport } = {};
 // Global map to track keep-alive interval timers
 const keepAliveTimers: { [sessionId: string]: ReturnType<typeof setInterval> } = {};
 
+// Function to clean up all resources (for testing)
+export function cleanupAllResources() {
+  // Stop all keep-alive timers
+  Object.keys(keepAliveTimers).forEach((sessionId) => {
+    clearInterval(keepAliveTimers[sessionId]);
+    delete keepAliveTimers[sessionId];
+  });
+
+  // Clear all transports
+  Object.keys(transports).forEach((sessionId) => {
+    delete transports[sessionId];
+  });
+}
+
 // Get keep-alive interval from config
 const config = loadConfig();
 const KEEP_ALIVE_INTERVAL = config.server.keepAliveInterval;
