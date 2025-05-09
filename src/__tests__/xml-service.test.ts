@@ -1,4 +1,5 @@
 import { XmlService } from '../services/xml/xml-service.js';
+import { XmlParsingError } from '../services/xml/types.js';
 
 describe('XmlService', () => {
   let xmlService: XmlService;
@@ -179,6 +180,105 @@ describe('XmlService', () => {
       };
       const result = xmlService.getResponses(multistatus);
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('parseXml', () => {
+    it('should parse valid XML successfully', async () => {
+      const xmlString = `<?xml version="1.0" encoding="UTF-8"?>
+        <d:multistatus xmlns:d="DAV:">
+          <d:response>
+            <d:href>/calendars/user/calendar1/</d:href>
+            <d:status>HTTP/1.1 200 OK</d:status>
+          </d:response>
+        </d:multistatus>`;
+
+      const result = await xmlService.parseXml(xmlString);
+      expect(result).toHaveProperty('d:multistatus');
+      expect(result['d:multistatus']).toHaveProperty('d:response');
+    });
+
+    it('should handle XML with alternate formatting', async () => {
+      const xmlString = `<?xml version="1.0" encoding="UTF-8"?>
+        <multistatus xmlns="DAV:">
+          <response>
+            <href>/calendars/user/calendar1/</href>
+            <status>HTTP/1.1 200 OK</status>
+          </response>
+        </multistatus>`;
+
+      const result = await xmlService.parseXml(xmlString);
+      expect(result).toHaveProperty('multistatus');
+    });
+
+    it('should throw XmlParsingError when allowFallback is false and parsing fails', async () => {
+      const invalidXml = `<?xml version="1.0" encoding="UTF-8"?>
+        <unclosed>
+          <tag>This XML is invalid
+        </unclosed>`;
+
+      await expect(
+        xmlService.parseXml(invalidXml, { allowFallback: false }),
+      ).rejects.toBeInstanceOf(XmlParsingError);
+    });
+
+    it('should include original XML and options in XmlParsingError', async () => {
+      const invalidXml = `<?xml version="1.0" encoding="UTF-8"?>
+        <unclosed>
+          <tag>This XML is invalid
+        </unclosed>`;
+
+      // Using expect().rejects version
+      await expect(xmlService.parseXml(invalidXml, { allowFallback: false })).rejects.toMatchObject(
+        {
+          name: 'XmlParsingError',
+          xmlString: invalidXml,
+        },
+      );
+    });
+
+    it('should reject XXE attack attempts with security settings', async () => {
+      // Our XML parser rejects malformed entity declarations with security settings
+      // So we'll test that it rejects the XML rather than expanding it
+      const xxeXml = `<?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE test [
+          <!ENTITY xxe SYSTEM "file:///etc/passwd">
+        ]>
+        <test>&xxe;</test>`;
+
+      // Should throw an error rather than process the entity
+      await expect(xmlService.parseXml(xxeXml)).rejects.toBeInstanceOf(XmlParsingError);
+    });
+
+    it('should use direct formatting in formatUTCDate', () => {
+      // Test with a fixed date
+      const date = new Date(Date.UTC(2023, 5, 15, 10, 30, 45, 123));
+      expect(xmlService.formatUTCDate(date)).toBe('20230615T103045Z');
+    });
+  });
+
+  describe('dispose functionality', () => {
+    it('should not throw when using dispose method on XmlDocumentBuilder', () => {
+      const doc = xmlService.createDocument('root');
+      expect(() => {
+        doc.dispose();
+      }).not.toThrow();
+    });
+
+    it('should throw when using a disposed XmlDocumentBuilder', () => {
+      const doc = xmlService.createDocument('root');
+      doc.dispose();
+      expect(() => {
+        doc.addElement('child');
+      }).toThrow();
+    });
+
+    it('should allow disposal to be called multiple times', () => {
+      const doc = xmlService.createDocument('root');
+      doc.dispose();
+      expect(() => {
+        doc.dispose();
+      }).not.toThrow();
     });
   });
 });

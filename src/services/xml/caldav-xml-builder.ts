@@ -68,7 +68,12 @@ export class CalDavXmlBuilder {
       propElement.addEmptyElement(property);
     }
 
-    return doc.toString(true);
+    try {
+      return doc.toString(true);
+    } finally {
+      // Dispose the document builder to prevent memory leaks
+      doc.dispose();
+    }
   }
 
   /**
@@ -91,7 +96,12 @@ export class CalDavXmlBuilder {
       .endElement() // End c:prop
       .endElement(); // End c:set
 
-    return doc.toString(true);
+    try {
+      return doc.toString(true);
+    } finally {
+      // Dispose the document builder to prevent memory leaks
+      doc.dispose();
+    }
   }
 
   /**
@@ -129,7 +139,12 @@ export class CalDavXmlBuilder {
       .endElement() // End d:prop
       .endElement(); // End d:set
 
-    return doc.toString(true);
+    try {
+      return doc.toString(true);
+    } finally {
+      // Dispose the document builder to prevent memory leaks
+      doc.dispose();
+    }
   }
 
   /**
@@ -193,7 +208,12 @@ export class CalDavXmlBuilder {
       .endElement() // End c:comp-filter (VCALENDAR)
       .endElement(); // End c:filter
 
-    return doc.toString(true);
+    try {
+      return doc.toString(true);
+    } finally {
+      // Dispose the document builder to prevent memory leaks
+      doc.dispose();
+    }
   }
 
   /**
@@ -230,7 +250,12 @@ export class CalDavXmlBuilder {
       .endElement() // End c:comp-filter (VCALENDAR)
       .endElement(); // End c:filter
 
-    return doc.toString(true);
+    try {
+      return doc.toString(true);
+    } finally {
+      // Dispose the document builder to prevent memory leaks
+      doc.dispose();
+    }
   }
 
   /**
@@ -261,7 +286,12 @@ export class CalDavXmlBuilder {
       doc.addElement('d:href', url);
     }
 
-    return doc.toString(true);
+    try {
+      return doc.toString(true);
+    } finally {
+      // Dispose the document builder to prevent memory leaks
+      doc.dispose();
+    }
   }
 
   /**
@@ -290,7 +320,12 @@ export class CalDavXmlBuilder {
 
     doc.endElement(); // End c:filter
 
-    return doc.toString(true);
+    try {
+      return doc.toString(true);
+    } finally {
+      // Dispose the document builder to prevent memory leaks
+      doc.dispose();
+    }
   }
 
   /**
@@ -385,60 +420,82 @@ export class CalDavXmlBuilder {
    */
   private parseCalDavResponse(response: Record<string, unknown>): CalDavResponse {
     // Extract href
-    let href = '';
-    if (response['d:href']) {
-      href = String(response['d:href']);
-    } else if (response['href']) {
-      href = String(response['href']);
-    }
+    const href = this.extractElementValue(response, ['d:href', 'href']);
 
     // Extract status
-    let status = '';
-    if (response['d:status']) {
-      status = String(response['d:status']);
-    } else if (response['status']) {
-      status = String(response['status']);
-    }
+    const status = this.extractElementValue(response, ['d:status', 'status']);
 
     // Extract properties
-    let properties: Record<string, unknown> = {};
-    if (response['d:propstat']) {
-      const propstat = response['d:propstat'];
-      if (Array.isArray(propstat)) {
-        // Find the propstat with status 200
-        for (const ps of propstat) {
-          const psStatus = ps['d:status'] || ps['status'];
-          if (psStatus && String(psStatus).includes('200')) {
-            properties = (ps['d:prop'] || ps['prop']) as Record<string, unknown>;
-            break;
-          }
-        }
-      } else if (typeof propstat === 'object' && propstat !== null) {
-        properties = ((propstat as Record<string, unknown>)['d:prop'] ||
-          (propstat as Record<string, unknown>)['prop']) as Record<string, unknown>;
-      }
-    } else if (response['propstat']) {
-      const propstat = response['propstat'];
-      if (Array.isArray(propstat)) {
-        // Find the propstat with status 200
-        for (const ps of propstat) {
-          const psStatus = ps['d:status'] || ps['status'];
-          if (psStatus && String(psStatus).includes('200')) {
-            properties = (ps['d:prop'] || ps['prop']) as Record<string, unknown>;
-            break;
-          }
-        }
-      } else if (typeof propstat === 'object' && propstat !== null) {
-        properties = ((propstat as Record<string, unknown>)['d:prop'] ||
-          (propstat as Record<string, unknown>)['prop']) as Record<string, unknown>;
-      }
-    }
+    const properties = this.extractPropstatProperties(response);
 
     return {
       href,
       status,
       properties,
     };
+  }
+
+  /**
+   * Helper method to extract a property value from different possible keys
+   *
+   * @param obj Object to extract from
+   * @param keys Array of possible keys
+   * @returns Extracted value or empty string
+   */
+  private extractElementValue(obj: Record<string, unknown>, keys: string[]): string {
+    for (const key of keys) {
+      if (obj[key] !== undefined) {
+        return String(obj[key]);
+      }
+    }
+    return '';
+  }
+
+  /**
+   * Helper method to extract properties from propstat elements
+   *
+   * @param response Response object containing propstat
+   * @returns Properties object
+   */
+  private extractPropstatProperties(response: Record<string, unknown>): Record<string, unknown> {
+    // Try to extract properties from d:propstat or propstat
+    for (const propstatKey of ['d:propstat', 'propstat']) {
+      const propstat = response[propstatKey];
+      if (!propstat) continue;
+
+      if (Array.isArray(propstat)) {
+        // Find the propstat with status 200
+        for (const ps of propstat) {
+          const psStatus = this.extractElementValue(ps as Record<string, unknown>, [
+            'd:status',
+            'status',
+          ]);
+          if (psStatus && psStatus.includes('200')) {
+            return this.extractPropElement(ps as Record<string, unknown>);
+          }
+        }
+      } else if (typeof propstat === 'object' && propstat !== null) {
+        // Direct propstat object
+        return this.extractPropElement(propstat as Record<string, unknown>);
+      }
+    }
+
+    return {}; // No properties found
+  }
+
+  /**
+   * Helper method to extract prop element from propstat
+   *
+   * @param propstat Propstat object
+   * @returns Properties object
+   */
+  private extractPropElement(propstat: Record<string, unknown>): Record<string, unknown> {
+    for (const propKey of ['d:prop', 'prop']) {
+      if (propstat[propKey]) {
+        return propstat[propKey] as Record<string, unknown>;
+      }
+    }
+    return {};
   }
 
   /**

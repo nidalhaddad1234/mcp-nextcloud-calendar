@@ -35,6 +35,77 @@ export interface ParseOptions {
    * Whether to normalize attribute names
    */
   normalize?: boolean;
+
+  /**
+   * Whether to allow fallback parsing with alternative options
+   */
+  allowFallback?: boolean;
+
+  /**
+   * Whether to explicitly disable external entity expansion
+   * Default: true (disables XXE for security)
+   */
+  disableEntityExpansion?: boolean;
+
+  /**
+   * Limit for entity expansion to prevent Billion Laughs attack
+   * Default: 10000
+   */
+  entityExpansionLimit?: number;
+}
+
+/**
+ * Custom error class for XML parsing failures
+ */
+export class XmlParsingError extends Error {
+  /**
+   * The original XML string that failed to parse
+   */
+  xmlString: string;
+
+  /**
+   * The options used for parsing
+   */
+  parseOptions: ParseOptions;
+
+  /**
+   * The original error that occurred during parsing
+   */
+  originalError: unknown;
+
+  /**
+   * Whether fallback parsing was attempted
+   */
+  fallbackAttempted: boolean;
+
+  /**
+   * Creates a new XML parsing error
+   *
+   * @param message Error message
+   * @param xmlString Original XML string
+   * @param parseOptions Options used for parsing
+   * @param originalError Original error from parser
+   * @param fallbackAttempted Whether fallback parsing was attempted
+   */
+  constructor(
+    message: string,
+    xmlString: string,
+    parseOptions: ParseOptions,
+    originalError: unknown,
+    fallbackAttempted: boolean = false,
+  ) {
+    super(message);
+    this.name = 'XmlParsingError';
+    this.xmlString = xmlString;
+    this.parseOptions = parseOptions;
+    this.originalError = originalError;
+    this.fallbackAttempted = fallbackAttempted;
+
+    // Maintains proper stack trace for where error was thrown (V8 only)
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, XmlParsingError);
+    }
+  }
 }
 
 /**

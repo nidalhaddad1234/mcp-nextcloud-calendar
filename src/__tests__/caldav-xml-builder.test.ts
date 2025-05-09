@@ -313,4 +313,123 @@ describe('CalDavXmlBuilder', () => {
       expect(result.focusPriority).toBeUndefined();
     });
   });
+
+  describe('parseCalDavResponse helper methods', () => {
+    it('should extract element values correctly', () => {
+      // Using private method through any type cast to test
+      const builder = calDavXmlBuilder as any;
+
+      const testObj = {
+        'd:href': '/calendars/user/test.ics',
+        status: 'HTTP/1.1 200 OK',
+      };
+
+      // Test first key found
+      expect(builder.extractElementValue(testObj, ['d:href', 'href'])).toBe(
+        '/calendars/user/test.ics',
+      );
+
+      // Test second key found
+      expect(builder.extractElementValue(testObj, ['href', 'status'])).toBe('HTTP/1.1 200 OK');
+
+      // Test no key found
+      expect(builder.extractElementValue(testObj, ['nonexistent'])).toBe('');
+    });
+
+    it('should extract propstat properties correctly', () => {
+      // Using private method through any type cast to test
+      const builder = calDavXmlBuilder as any;
+
+      // Test with d:propstat
+      const response1 = {
+        'd:propstat': {
+          'd:status': 'HTTP/1.1 200 OK',
+          'd:prop': {
+            'd:displayname': 'Test Calendar',
+          },
+        },
+      };
+
+      const props1 = builder.extractPropstatProperties(response1);
+      expect(props1).toEqual({ 'd:displayname': 'Test Calendar' });
+
+      // Test with propstat array where first has non-200 status
+      const response2 = {
+        propstat: [
+          {
+            status: 'HTTP/1.1 404 Not Found',
+            prop: { error: 'not found' },
+          },
+          {
+            status: 'HTTP/1.1 200 OK',
+            prop: { displayname: 'Found Calendar' },
+          },
+        ],
+      };
+
+      const props2 = builder.extractPropstatProperties(response2);
+      expect(props2).toEqual({ displayname: 'Found Calendar' });
+
+      // Test with no propstat
+      const response3 = {
+        other: 'data',
+      };
+
+      const props3 = builder.extractPropstatProperties(response3);
+      expect(props3).toEqual({});
+    });
+
+    it('should extract prop element correctly', () => {
+      // Using private method through any type cast to test
+      const builder = calDavXmlBuilder as any;
+
+      // Test with d:prop
+      const propstat1 = {
+        'd:prop': { 'd:displayname': 'Test' },
+      };
+
+      expect(builder.extractPropElement(propstat1)).toEqual({ 'd:displayname': 'Test' });
+
+      // Test with prop
+      const propstat2 = {
+        prop: { displayname: 'Test2' },
+      };
+
+      expect(builder.extractPropElement(propstat2)).toEqual({ displayname: 'Test2' });
+
+      // Test with no prop
+      const propstat3 = {
+        other: 'data',
+      };
+
+      expect(builder.extractPropElement(propstat3)).toEqual({});
+    });
+
+    it('should parse a complete response using helper methods', () => {
+      const xmlData = {
+        'd:multistatus': {
+          'd:response': [
+            {
+              'd:href': '/calendars/user/calendar1/',
+              'd:status': 'HTTP/1.1 200 OK',
+              'd:propstat': {
+                'd:status': 'HTTP/1.1 200 OK',
+                'd:prop': {
+                  'd:displayname': 'Test Calendar',
+                  'd:resourcetype': { 'd:collection': {}, 'c:calendar': {} },
+                },
+              },
+            },
+          ],
+        },
+      };
+
+      const responses = calDavXmlBuilder.parseMultistatus(xmlData);
+
+      expect(responses).toHaveLength(1);
+      expect(responses[0].href).toBe('/calendars/user/calendar1/');
+      expect(responses[0].status).toBe('HTTP/1.1 200 OK');
+      expect(responses[0].properties['d:displayname']).toBe('Test Calendar');
+    });
+  });
 });

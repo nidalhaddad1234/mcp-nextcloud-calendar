@@ -12,6 +12,7 @@ export class XmlDocumentBuilder {
   private namespaces: Record<string, string>;
   private currentElement: ElementNode;
   private rootElement: ElementNode;
+  private isDisposed: boolean;
 
   /**
    * Creates a new XML document builder
@@ -26,6 +27,7 @@ export class XmlDocumentBuilder {
     this.namespaces = namespaces || {};
     this.rootElement = new ElementNode(rootElementName);
     this.currentElement = this.rootElement;
+    this.isDisposed = false;
 
     // Add namespace attributes to root element
     if (namespaces) {
@@ -43,6 +45,10 @@ export class XmlDocumentBuilder {
    * @returns This builder instance (for chaining)
    */
   addElement(name: string, content?: string): XmlDocumentBuilder {
+    if (this.isDisposed) {
+      throw new Error('Cannot use XmlDocumentBuilder after it has been disposed');
+    }
+
     const element = new ElementNode(name);
     if (content !== undefined) {
       element.setContent(content);
@@ -124,11 +130,56 @@ export class XmlDocumentBuilder {
     version: string = '1.0',
     encoding: string = 'UTF-8',
   ): string {
+    if (this.isDisposed) {
+      throw new Error('Cannot use XmlDocumentBuilder after it has been disposed');
+    }
+
     const xmlContent = this.rootElement.toString(this.service);
     if (includeDeclaration) {
       return this.service.createXmlDocument(xmlContent, version, encoding);
     }
     return xmlContent;
+  }
+
+  /**
+   * Disposes the document builder by breaking circular references
+   * Call this method when you're done with the document builder to prevent memory leaks
+   * The builder cannot be used after calling dispose()
+   *
+   * @returns void
+   */
+  dispose(): void {
+    if (this.isDisposed) {
+      return;
+    }
+
+    // Break circular references by traversing the tree and nullifying parent references
+    this.disposeElementNode(this.rootElement);
+
+    // Reset references
+    this.rootElement = null as unknown as ElementNode;
+    this.currentElement = null as unknown as ElementNode;
+    this.isDisposed = true;
+  }
+
+  /**
+   * Helper method to recursively clean up circular references in element nodes
+   *
+   * @param node The element node to dispose
+   */
+  private disposeElementNode(node: ElementNode): void {
+    // Clean up children first
+    if (node.children && node.children.length > 0) {
+      for (const child of node.children) {
+        // Break parent reference
+        child.parent = undefined;
+        // Recursively dispose child node
+        this.disposeElementNode(child);
+      }
+
+      // Clear children array
+      node.children.length = 0;
+    }
   }
 }
 
