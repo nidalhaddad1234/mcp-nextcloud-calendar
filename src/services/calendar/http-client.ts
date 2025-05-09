@@ -6,6 +6,21 @@ import { createLogger } from '../logger.js';
 
 const logger = createLogger('CalendarHttpClient');
 
+/**
+ * Custom error class for CalDAV HTTP errors
+ */
+export class CalDavError extends Error {
+  status?: number;
+  isOptimisticConcurrencyFailure: boolean;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = 'CalDavError';
+    this.status = status;
+    this.isOptimisticConcurrencyFailure = status === 412;
+  }
+}
+
 export class CalendarHttpClient {
   private authHeader: string;
   private baseUrl: string;
@@ -319,33 +334,40 @@ export class CalendarHttpClient {
    * Process HTTP errors and provide meaningful error messages
    * @param error The axios error
    * @param defaultMessage Default error message if specific error cannot be determined
-   * @returns Error with meaningful message
+   * @returns CalDavError with meaningful message and status code
    */
-  private handleHttpError(error: unknown, defaultMessage: string): Error {
+  private handleHttpError(error: unknown, defaultMessage: string): CalDavError {
     if (axios.isAxiosError(error)) {
       const status = error.response?.status || 500;
 
       // Handle common HTTP errors with more specific messages
       if (status === 401 || status === 403) {
-        return new Error('Unauthorized: You do not have permission for this action.');
+        return new CalDavError('Unauthorized: You do not have permission for this action.', status);
       } else if (status === 404) {
-        return new Error('Resource not found.');
+        return new CalDavError('Resource not found.', status);
       } else if (status === 405) {
-        return new Error('Operation not supported by this server.');
+        return new CalDavError('Operation not supported by this server.', status);
       } else if (status === 409) {
-        return new Error('Conflict: Resource already exists or contains conflicts.');
+        return new CalDavError('Conflict: Resource already exists or contains conflicts.', status);
       } else if (status === 412) {
-        return new Error(
+        return new CalDavError(
           'Precondition Failed: The resource was modified by another client. Please refresh and try again.',
+          status,
         );
       } else if (status === 423) {
-        return new Error('Resource is locked and cannot be modified.');
+        return new CalDavError('Resource is locked and cannot be modified.', status);
       } else if (status === 507) {
-        return new Error('Insufficient storage space.');
+        return new CalDavError('Insufficient storage space.', status);
       }
+
+      // For other status codes, include them in the error
+      return new CalDavError(
+        `HTTP error ${status}: ${error.response?.statusText || 'Unknown error'}`,
+        status,
+      );
     }
 
     // Generic error for unknown cases
-    return new Error(defaultMessage);
+    return new CalDavError(defaultMessage);
   }
 }

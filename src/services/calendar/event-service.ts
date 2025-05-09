@@ -4,7 +4,7 @@
 import { NextcloudConfig } from '../../config/config.js';
 import { Event } from '../../models/index.js';
 import { createLogger } from '../logger.js';
-import { CalendarHttpClient } from './http-client.js';
+import { CalendarHttpClient, CalDavError } from './http-client.js';
 import * as XmlUtils from './xml-utils.js';
 import * as iCalUtils from './ical-utils.js';
 import crypto from 'crypto';
@@ -442,8 +442,8 @@ export class EventService {
     } catch (error) {
       this.logger.error(`Error updating event ${eventId} in calendar ${calendarId}:`, error);
 
-      // Special handling for precondition failed errors
-      if ((error as Error).message.includes('Precondition Failed')) {
+      // Check for optimistic concurrency failures using the CalDavError type
+      if (error instanceof CalDavError && error.isOptimisticConcurrencyFailure) {
         throw new Error(
           `The event was modified by another user. Please refresh the event data and try again.`,
         );

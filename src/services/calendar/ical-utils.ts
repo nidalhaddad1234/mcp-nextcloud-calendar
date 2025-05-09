@@ -468,6 +468,12 @@ function parseEventComponent(eventData: string, calendarId: string): Event | nul
  * Parse a date from iCalendar format (e.g., "20210315" for March 15, 2021)
  * @param dateStr The date string in iCalendar format
  * @returns A Date object or null if invalid
+ *
+ * Performs extensive validation of iCalendar date strings:
+ * 1. Format must be exactly YYYYMMDD (8 digits)
+ * 2. Year must be between 1900-2100
+ * 3. Month must be 01-12
+ * 4. Day must be valid for the given month and year (accounting for leap years)
  */
 function parseICalDate(dateStr: string): Date | null {
   // Validate input
@@ -476,18 +482,28 @@ function parseICalDate(dateStr: string): Date | null {
     return null;
   }
 
+  // Clean the string of any whitespace or non-alphanumeric characters
+  const cleanStr = dateStr.trim();
+
   // Check format: exact 8 characters for YYYYMMDD
-  if (dateStr.length !== 8 || !/^\d{8}$/.test(dateStr)) {
+  if (cleanStr.length !== 8 || !/^\d{8}$/.test(cleanStr)) {
     logger.warn(`parseICalDate: Invalid date format: "${dateStr}"`);
     return null;
   }
 
   try {
-    const year = parseInt(dateStr.substring(0, 4), 10);
-    const month = parseInt(dateStr.substring(4, 6), 10) - 1; // Months are 0-based in JS
-    const day = parseInt(dateStr.substring(6, 8), 10);
+    const year = parseInt(cleanStr.substring(0, 4), 10);
+    const month = parseInt(cleanStr.substring(4, 6), 10) - 1; // Months are 0-based in JS
+    const day = parseInt(cleanStr.substring(6, 8), 10);
 
     // Validate date components
+    if (isNaN(year) || isNaN(month) || isNaN(day)) {
+      logger.warn(
+        `parseICalDate: Found NaN values in date components: year=${year}, month=${month + 1}, day=${day}`,
+      );
+      return null;
+    }
+
     if (year < 1900 || year > 2100) {
       logger.warn(`parseICalDate: Year out of range: ${year}`);
       return null;
@@ -503,18 +519,42 @@ function parseICalDate(dateStr: string): Date | null {
       return null;
     }
 
-    // Create date and validate (this will handle invalid dates like Feb 30)
+    // Validate days per month (accounting for leap years)
+    const maxDaysInMonth = [
+      31,
+      year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28,
+      31,
+      30,
+      31,
+      30,
+      31,
+      31,
+      30,
+      31,
+      30,
+      31,
+    ];
+    if (day > maxDaysInMonth[month]) {
+      logger.warn(`parseICalDate: Invalid day (${day}) for month ${month + 1} in year ${year}`);
+      return null;
+    }
+
+    // Create date with validated components
     const date = new Date(year, month, day);
 
-    // Check if the date is valid by seeing if the components match what we provided
+    // Verify date construction integrity by checking components match inputs
+    // This catches edge cases like DST transitions or other JS Date oddities
     if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) {
-      logger.warn(`parseICalDate: Invalid date: ${year}-${month + 1}-${day}`);
+      logger.warn(
+        `parseICalDate: Date object construction inconsistency for: ${year}-${month + 1}-${day}, possible invalid date combination`,
+      );
       return null;
     }
 
     return date;
   } catch (error) {
-    logger.warn(`parseICalDate: Error parsing date "${dateStr}":`, error);
+    // Handle any unexpected errors from Date construction
+    logger.error(`parseICalDate: Unexpected error parsing date "${dateStr}":`, error);
     return null;
   }
 }
@@ -523,6 +563,19 @@ function parseICalDate(dateStr: string): Date | null {
  * Parse a date and time from iCalendar format (e.g., "20210315T143000Z")
  * @param dateTimeStr The date-time string in iCalendar format
  * @returns A Date object or null if invalid
+ *
+ * Supports multiple iCalendar datetime formats:
+ * 1. YYYYMMDD - Date only (no time component)
+ * 2. YYYYMMDDTHHMMSS - Local date and time
+ * 3. YYYYMMDDTHHMMSSZ - UTC date and time
+ * 4. Partial time components: HH (hours only) or HHMM (hours and minutes)
+ *
+ * Performs comprehensive validation:
+ * - Format validation (correct characters and structure)
+ * - Component range validation (valid year, month, day, hour, minute, second)
+ * - Calendar validation (correct days per month, leap year handling)
+ * - Timezone handling (UTC vs local time)
+ * - Date integrity verification after construction
  */
 function parseICalDateTime(dateTimeStr: string): Date | null {
   // Validate input
@@ -531,26 +584,51 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
     return null;
   }
 
-  // Basic format check: minimum 8 chars, only contains allowed characters
-  if (dateTimeStr.length < 8 || !/^[\dTZ]+$/.test(dateTimeStr)) {
-    logger.warn(`parseICalDateTime: Invalid datetime format: "${dateTimeStr}"`);
+  // Trim any whitespace and normalize to uppercase (for Z indicator)
+  const inputStr = dateTimeStr.trim().toUpperCase();
+
+  // Basic format check: minimum 8 chars for YYYYMMDD
+  if (inputStr.length < 8) {
+    logger.warn(
+      `parseICalDateTime: String too short (${inputStr.length}), minimum 8 characters required: "${dateTimeStr}"`,
+    );
+    return null;
+  }
+
+  // Check for valid characters (digits, T separator, Z for UTC)
+  const validCharsRegex = /^[\dTZ]+$/;
+  if (!validCharsRegex.test(inputStr)) {
+    logger.warn(
+      `parseICalDateTime: Invalid characters in datetime string, only digits, T, and Z allowed: "${dateTimeStr}"`,
+    );
+    return null;
+  }
+
+  // Structure check: If contains T, it must be in position 9 or later (after date part)
+  const tIndex = inputStr.indexOf('T');
+  if (tIndex > 0 && tIndex < 8) {
+    logger.warn(
+      `parseICalDateTime: T separator in wrong position (${tIndex}), must be after date part: "${dateTimeStr}"`,
+    );
     return null;
   }
 
   try {
-    // Check if it's just a date (no time component)
-    if (dateTimeStr.length === 8 && /^\d{8}$/.test(dateTimeStr)) {
-      return parseICalDate(dateTimeStr);
+    // CASE 1: Just a date (no time component) - exactly 8 digits
+    if (inputStr.length === 8 && /^\d{8}$/.test(inputStr)) {
+      logger.debug(`parseICalDateTime: Handling as date-only string (YYYYMMDD): "${inputStr}"`);
+      return parseICalDate(inputStr);
     }
 
-    // Remove the 'Z' at the end if present
-    const isUTC = dateTimeStr.endsWith('Z');
-    const cleanStr = isUTC ? dateTimeStr.substring(0, dateTimeStr.length - 1) : dateTimeStr;
+    // Handle UTC indicator - 'Z' at the end
+    const isUTC = inputStr.endsWith('Z');
+    // Remove the 'Z' for further processing
+    const cleanStr = isUTC ? inputStr.substring(0, inputStr.length - 1) : inputStr;
 
-    // Check for the 'T' separator
+    // Find the position of the 'T' separator between date and time
     const tPos = cleanStr.indexOf('T');
     if (tPos <= 0) {
-      // No time component, just a date
+      // No time component separator, so just treat as a date
       return parseICalDate(cleanStr);
     }
 
@@ -558,22 +636,30 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
     const dateStr = cleanStr.substring(0, tPos);
     const timeStr = cleanStr.substring(tPos + 1);
 
-    // Validate date part (should be 8 digits)
+    // Validate date part (should be 8 digits for YYYYMMDD)
     if (dateStr.length !== 8 || !/^\d{8}$/.test(dateStr)) {
       logger.warn(`parseICalDateTime: Invalid date part: "${dateStr}"`);
       return null;
     }
 
-    // Validate time part (should be 2, 4, or 6 digits)
+    // Validate time part (should be 2, 4, or 6 digits for HH, HHMM, or HHMMSS)
     if (![2, 4, 6].includes(timeStr.length) || !/^\d+$/.test(timeStr)) {
       logger.warn(`parseICalDateTime: Invalid time part: "${timeStr}"`);
       return null;
     }
 
-    // Parse date
+    // Parse date components
     const year = parseInt(dateStr.substring(0, 4), 10);
     const month = parseInt(dateStr.substring(4, 6), 10) - 1; // Months are 0-based in JS
     const day = parseInt(dateStr.substring(6, 8), 10);
+
+    // Check for NaN in date components
+    if (isNaN(year) || isNaN(month) || isNaN(day)) {
+      logger.warn(
+        `parseICalDateTime: Found NaN in date components: year=${year}, month=${month + 1}, day=${day}`,
+      );
+      return null;
+    }
 
     // Validate date components
     if (year < 1900 || year > 2100) {
@@ -591,36 +677,60 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
       return null;
     }
 
-    // Parse time
+    // Validate days per month (accounting for leap years)
+    const maxDaysInMonth = [
+      31,
+      year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28,
+      31,
+      30,
+      31,
+      30,
+      31,
+      31,
+      30,
+      31,
+      30,
+      31,
+    ];
+    if (day > maxDaysInMonth[month]) {
+      logger.warn(`parseICalDateTime: Invalid day (${day}) for month ${month + 1} in year ${year}`);
+      return null;
+    }
+
+    // Parse time components with defaults
     let hour = 0,
       minute = 0,
       second = 0;
 
     if (timeStr.length >= 2) {
       hour = parseInt(timeStr.substring(0, 2), 10);
-      if (hour < 0 || hour > 23) {
-        logger.warn(`parseICalDateTime: Hour out of range: ${hour}`);
+      if (isNaN(hour) || hour < 0 || hour > 23) {
+        logger.warn(`parseICalDateTime: Hour invalid or out of range: ${timeStr.substring(0, 2)}`);
         return null;
       }
     }
 
     if (timeStr.length >= 4) {
       minute = parseInt(timeStr.substring(2, 4), 10);
-      if (minute < 0 || minute > 59) {
-        logger.warn(`parseICalDateTime: Minute out of range: ${minute}`);
+      if (isNaN(minute) || minute < 0 || minute > 59) {
+        logger.warn(
+          `parseICalDateTime: Minute invalid or out of range: ${timeStr.substring(2, 4)}`,
+        );
         return null;
       }
     }
 
     if (timeStr.length >= 6) {
       second = parseInt(timeStr.substring(4, 6), 10);
-      if (second < 0 || second > 59) {
-        logger.warn(`parseICalDateTime: Second out of range: ${second}`);
+      if (isNaN(second) || second < 0 || second > 59) {
+        logger.warn(
+          `parseICalDateTime: Second invalid or out of range: ${timeStr.substring(4, 6)}`,
+        );
         return null;
       }
     }
 
-    // Create the date object
+    // Create the date object (in UTC or local time as specified)
     let date: Date;
     if (isUTC) {
       date = new Date(Date.UTC(year, month, day, hour, minute, second));
@@ -628,7 +738,7 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
       date = new Date(year, month, day, hour, minute, second);
     }
 
-    // Validate the date by checking if components match
+    // Verify date is valid by checking if the date object's components match our inputs
     if (isUTC) {
       if (
         date.getUTCFullYear() !== year ||
@@ -639,7 +749,7 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
         date.getUTCSeconds() !== second
       ) {
         logger.warn(
-          `parseICalDateTime: Invalid UTC datetime: ${year}-${month + 1}-${day} ${hour}:${minute}:${second}`,
+          `parseICalDateTime: Date object inconsistency for UTC: ${year}-${month + 1}-${day} ${hour}:${minute}:${second}`,
         );
         return null;
       }
@@ -653,7 +763,7 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
         date.getSeconds() !== second
       ) {
         logger.warn(
-          `parseICalDateTime: Invalid datetime: ${year}-${month + 1}-${day} ${hour}:${minute}:${second}`,
+          `parseICalDateTime: Date object inconsistency for local time: ${year}-${month + 1}-${day} ${hour}:${minute}:${second}`,
         );
         return null;
       }
@@ -661,7 +771,11 @@ function parseICalDateTime(dateTimeStr: string): Date | null {
 
     return date;
   } catch (error) {
-    logger.warn(`parseICalDateTime: Error parsing datetime "${dateTimeStr}":`, error);
+    // Detailed error reporting for more diagnosable issues
+    logger.error(
+      `parseICalDateTime: Error parsing datetime "${dateTimeStr}": ${error instanceof Error ? error.message : String(error)}`,
+      error,
+    );
     return null;
   }
 }

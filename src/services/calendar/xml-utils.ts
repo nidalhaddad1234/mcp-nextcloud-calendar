@@ -219,10 +219,64 @@ export function getResponses(multistatus: Record<string, unknown>): Array<Record
  * @param end End date of the range (optional)
  * @returns XML string for the REPORT request
  *
- * TODO: Enhance this method to support additional server-side filtering options beyond time range,
- * such as filtering by categories, status, or other standardized properties to improve performance
- * with large calendars. This can be done by adding additional comp-filter and prop-filter elements
- * to the filter section.
+ * OPTIMIZATION RECOMMENDATIONS FOR SERVER-SIDE FILTERING:
+ *
+ * The current implementation only filters by date range on the server side, while doing
+ * additional filtering on the client side. For improved performance, especially with large
+ * calendars, we should enhance this method to use CalDAV's rich filtering capabilities:
+ *
+ * 1. Category Filtering:
+ *    Implement server-side filtering for categories using:
+ *    ```xml
+ *    <c:prop-filter name="CATEGORIES">
+ *      <c:text-match>ADHD</c:text-match>
+ *    </c:prop-filter>
+ *    ```
+ *
+ * 2. Priority Filtering:
+ *    Filter by event priority level:
+ *    ```xml
+ *    <c:prop-filter name="PRIORITY">
+ *      <c:param-filter name="VALUE">
+ *        <c:text-match>1</c:text-match>
+ *      </c:param-filter>
+ *    </c:prop-filter>
+ *    ```
+ *
+ * 3. Status Filtering:
+ *    Filter by event status (CONFIRMED, TENTATIVE, etc.):
+ *    ```xml
+ *    <c:prop-filter name="STATUS">
+ *      <c:text-match>CONFIRMED</c:text-match>
+ *    </c:prop-filter>
+ *    ```
+ *
+ * 4. Compound Filtering:
+ *    Combine multiple filters with test="anyof" or test="allof":
+ *    ```xml
+ *    <c:comp-filter name="VEVENT" test="allof">
+ *      <!-- Multiple filters that all must match -->
+ *    </c:comp-filter>
+ *    ```
+ *
+ * 5. Limit Results:
+ *    Use the LIMIT filter extension where supported:
+ *    ```xml
+ *    <d:limit>
+ *      <d:nresults>50</d:nresults>
+ *    </d:limit>
+ *    ```
+ *
+ * Implementation Plan:
+ * 1. Modify this function to accept a comprehensive filter options object
+ * 2. Generate the appropriate XML filter elements based on options
+ * 3. Update EventService to use these filters instead of client-side filtering
+ * 4. Maintain client-side filtering as fallback for specialized ADHD features
+ *    that don't have CalDAV equivalents
+ *
+ * Note: Server-side filtering depends on the CalDAV server's implementation.
+ * Nextcloud supports the standard WebDAV REPORT filters, but specialized
+ * ADHD extensions would still require client-side processing.
  */
 export function buildEventsReportRequest(start?: Date, end?: Date): string {
   // Default time range if not specified: +/- 6 months from current date
