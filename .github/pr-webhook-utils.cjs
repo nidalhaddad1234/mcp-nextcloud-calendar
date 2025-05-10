@@ -3,47 +3,72 @@
  */
 
 /**
+ * Process @MCPClaude comments with rate limiting and size constraints
+ * @param {string} text - Text content containing @MCPClaude comments
+ * @param {Object} options - Processing options
+ * @param {number} options.maxComments - Maximum number of comments to allow (default: 20)
+ * @param {number} options.maxCommentLength - Maximum length per comment in chars (default: 5120)
+ * @returns {string} Text with processed @MCPClaude comments
+ */
+function processMCPClaudeComments(text, options = {}) {
+  if (!text) return '';
+  
+  try {
+    const {
+      maxComments = 20,
+      maxCommentLength = 5 * 1024 // 5KB per comment
+    } = options;
+    
+    // This regex finds @MCPClaude comment lines with optional whitespace
+    const mcpClaudeRegex = /\/\/\s*@MCPClaude.*$/gm;
+    const matches = text.match(mcpClaudeRegex) || [];
+    
+    // 1. Count total @MCPClaude comments
+    const commentCount = matches.length;
+    
+    // 2. If there are more than maxComments, truncate the excess
+    if (commentCount > maxComments) {
+      console.warn(`@MCPClaude comment limit exceeded: ${commentCount} found, limiting to ${maxComments}`);
+      
+      // Replace all occurrences with a counter to track which to keep
+      let counter = 0;
+      text = text.replace(mcpClaudeRegex, match => {
+        counter++;
+        if (counter <= maxComments) {
+          return match; // Keep up to maxComments
+        } else {
+          return '// @MCPClaude comment limit exceeded'; // Replace excess with notice
+        }
+      });
+    }
+    
+    // 3. Limit length of each @MCPClaude comment
+    text = text.replace(mcpClaudeRegex, match => {
+      if (match.length > maxCommentLength) {
+        return match.substring(0, maxCommentLength - 3) + '...'; // Truncate with ellipsis
+      }
+      return match;
+    });
+    
+    return text;
+  } catch (error) {
+    console.warn(`Error processing @MCPClaude comments: ${error.message}`);
+    return text; // Return original text on error
+  }
+}
+
+/**
  * Sanitizes text content to remove truly sensitive information
  * @param {string} text - Text content to sanitize
  * @returns {string} Sanitized text
  */
 function sanitizeText(text) {
   if (!text) return '';
-
+  
   try {
-    // Process @MCPClaude comments - apply a reasonable limit to prevent abuse
-    // This regex finds @MCPClaude comment lines with optional whitespace
-    const mcpClaudeRegex = /\/\/\s*@MCPClaude.*$/gm;
-    const matches = text.match(mcpClaudeRegex) || [];
-
-    // Apply rate limiting for @MCPClaude comments
-    // 1. Count total @MCPClaude comments
-    const commentCount = matches.length;
-
-    // 2. If there are more than 20 comments, truncate the excess
-    if (commentCount > 20) {
-      console.warn(`@MCPClaude comment limit exceeded: ${commentCount} found, limiting to 20`);
-
-      // Replace all occurrences with a counter to track which to keep
-      let counter = 0;
-      text = text.replace(mcpClaudeRegex, match => {
-        counter++;
-        if (counter <= 20) {
-          return match; // Keep the first 20
-        } else {
-          return '// @MCPClaude comment limit exceeded'; // Replace excess with notice
-        }
-      });
-    }
-
-    // 3. Limit length of each @MCPClaude comment to 200 chars
-    text = text.replace(mcpClaudeRegex, match => {
-      if (match.length > 200) {
-        return match.substring(0, 197) + '...'; // Truncate with ellipsis
-      }
-      return match;
-    });
-
+    // Process @MCPClaude comments first
+    text = processMCPClaudeComments(text);
+    
     return text
       // Remove common API tokens with specific patterns
       .replace(/(\b)(gh[ps]_[A-Za-z0-9_]{36,})(\b)/g, '[GH_TOKEN_REDACTED]')
@@ -76,13 +101,13 @@ function sanitizeText(text) {
  */
 function shouldIncludeFile(filename) {
   if (!filename) return false;
-
+  
   const sensitivePatterns = [
     // Only exclude actual sensitive files
     /\.env($|\.)/i,
-    /\.key$/i,
-    /\.pem$/i,
-    /\.pfx$/i,
+    /\.key$/i, 
+    /\.pem$/i, 
+    /\.pfx$/i, 
     /\.p12$/i,
     /\.map$/i,
     /\.creds$/i,
@@ -94,7 +119,7 @@ function shouldIncludeFile(filename) {
     /yarn\.lock$/i,
     /pnpm-lock\.yaml$/i
   ];
-
+  
   return !sensitivePatterns.some(pattern => pattern.test(filename));
 }
 
@@ -105,7 +130,7 @@ function shouldIncludeFile(filename) {
  */
 function limitPatch(patch) {
   if (!patch) return '';
-
+  
   try {
     // Check for minified files or large non-code files
     const minifiedPatterns = [
@@ -113,23 +138,23 @@ function limitPatch(patch) {
       /\.(svg|json|xml)$/,                     // Data files that can be large
       /\b(dist|build|public|assets|vendor)\b/  // Generated code directories
     ];
-
+    
     // Use a smaller limit (5KB) for minified/generated files to save tokens
     const isMinifiedOrGenerated = minifiedPatterns.some(pattern =>
       pattern.test(patch.split('\n')[0] || '')  // Check first line for filename
     );
-
+    
     // Adjust max size based on file type
     const maxPatchSize = isMinifiedOrGenerated ? 5 * 1024 : 30 * 1024;
-
+    
     if (patch.length > maxPatchSize) {
-      const truncationMessage = isMinifiedOrGenerated
+      const truncationMessage = isMinifiedOrGenerated 
         ? '\n[... MINIFIED/GENERATED FILE PATCH TRUNCATED ...]'
         : '\n[... PATCH TRUNCATED DUE TO SIZE ...]';
-
+      
       return patch.substring(0, maxPatchSize) + truncationMessage;
     }
-
+    
     return patch;
   } catch (error) {
     console.warn(`Error limiting patch: ${error.message}`);
@@ -190,5 +215,6 @@ module.exports = {
   shouldIncludeFile,
   limitPatch,
   safeStringify,
-  createSimplifiedPrData
+  createSimplifiedPrData,
+  processMCPClaudeComments
 };
