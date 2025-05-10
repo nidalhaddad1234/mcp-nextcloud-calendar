@@ -246,8 +246,8 @@ export class WebXmlService {
           const valueObj = value as Record<string, unknown>;
 
           // If it's an object, check if it has text and attributes
-          if (valueObj.hasOwnProperty('#text')) {
-            if (valueObj.hasOwnProperty('$')) {
+          if (Object.prototype.hasOwnProperty.call(valueObj, '#text')) {
+            if (Object.prototype.hasOwnProperty.call(valueObj, '$')) {
               // It has both text and attributes
               normalized[key] = {
                 _: valueObj['#text'],
@@ -257,7 +257,7 @@ export class WebXmlService {
               // It just has text
               normalized[key] = valueObj['#text'];
             }
-          } else if (valueObj.hasOwnProperty('$')) {
+          } else if (Object.prototype.hasOwnProperty.call(valueObj, '$')) {
             // It just has attributes
             normalized[key] = {
               $: this.normalizeAttributes(valueObj['$'] as Record<string, unknown>),
