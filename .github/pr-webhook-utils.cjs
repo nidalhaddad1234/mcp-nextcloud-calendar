@@ -9,8 +9,41 @@
  */
 function sanitizeText(text) {
   if (!text) return '';
-  
+
   try {
+    // Process @MCPClaude comments - apply a reasonable limit to prevent abuse
+    // This regex finds @MCPClaude comment lines with optional whitespace
+    const mcpClaudeRegex = /\/\/\s*@MCPClaude.*$/gm;
+    const matches = text.match(mcpClaudeRegex) || [];
+
+    // Apply rate limiting for @MCPClaude comments
+    // 1. Count total @MCPClaude comments
+    const commentCount = matches.length;
+
+    // 2. If there are more than 20 comments, truncate the excess
+    if (commentCount > 20) {
+      console.warn(`@MCPClaude comment limit exceeded: ${commentCount} found, limiting to 20`);
+
+      // Replace all occurrences with a counter to track which to keep
+      let counter = 0;
+      text = text.replace(mcpClaudeRegex, match => {
+        counter++;
+        if (counter <= 20) {
+          return match; // Keep the first 20
+        } else {
+          return '// @MCPClaude comment limit exceeded'; // Replace excess with notice
+        }
+      });
+    }
+
+    // 3. Limit length of each @MCPClaude comment to 200 chars
+    text = text.replace(mcpClaudeRegex, match => {
+      if (match.length > 200) {
+        return match.substring(0, 197) + '...'; // Truncate with ellipsis
+      }
+      return match;
+    });
+
     return text
       // Remove common API tokens with specific patterns
       .replace(/(\b)(gh[ps]_[A-Za-z0-9_]{36,})(\b)/g, '[GH_TOKEN_REDACTED]')
