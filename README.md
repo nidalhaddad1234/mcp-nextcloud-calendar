@@ -2,6 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/mcp-nextcloud-calendar.svg)](https://www.npmjs.com/package/mcp-nextcloud-calendar)
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/cheffromspace)
 
 A Model Context Protocol (MCP) server for Nextcloud Calendar integration.
 
