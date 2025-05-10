@@ -76,21 +76,25 @@ function sanitizeText(text) {
  */
 function shouldIncludeFile(filename) {
   if (!filename) return false;
-  
+
   const sensitivePatterns = [
     // Only exclude actual sensitive files
     /\.env($|\.)/i,
-    /\.key$/i, 
-    /\.pem$/i, 
-    /\.pfx$/i, 
+    /\.key$/i,
+    /\.pem$/i,
+    /\.pfx$/i,
     /\.p12$/i,
     /\.map$/i,
     /\.creds$/i,
     /\.secret$/i,
     // Binary files that would bloat the payload
-    /\.(jpg|jpeg|png|gif|ico|pdf|zip|tar|gz|bin|exe)$/i
+    /\.(jpg|jpeg|png|gif|ico|pdf|zip|tar|gz|bin|exe)$/i,
+    // Large generated files that consume tokens with minimal value
+    /package-lock\.json$/i,
+    /yarn\.lock$/i,
+    /pnpm-lock\.yaml$/i
   ];
-  
+
   return !sensitivePatterns.some(pattern => pattern.test(filename));
 }
 
@@ -101,13 +105,31 @@ function shouldIncludeFile(filename) {
  */
 function limitPatch(patch) {
   if (!patch) return '';
-  
+
   try {
-    // Increase reasonable patch size limit to 30KB
-    const maxPatchSize = 30 * 1024;
+    // Check for minified files or large non-code files
+    const minifiedPatterns = [
+      /\.min\.(js|css)$/,                      // Minified JS/CSS
+      /\.(svg|json|xml)$/,                     // Data files that can be large
+      /\b(dist|build|public|assets|vendor)\b/  // Generated code directories
+    ];
+
+    // Use a smaller limit (5KB) for minified/generated files to save tokens
+    const isMinifiedOrGenerated = minifiedPatterns.some(pattern =>
+      pattern.test(patch.split('\n')[0] || '')  // Check first line for filename
+    );
+
+    // Adjust max size based on file type
+    const maxPatchSize = isMinifiedOrGenerated ? 5 * 1024 : 30 * 1024;
+
     if (patch.length > maxPatchSize) {
-      return patch.substring(0, maxPatchSize) + '\n[... PATCH TRUNCATED DUE TO SIZE ...]';
+      const truncationMessage = isMinifiedOrGenerated
+        ? '\n[... MINIFIED/GENERATED FILE PATCH TRUNCATED ...]'
+        : '\n[... PATCH TRUNCATED DUE TO SIZE ...]';
+
+      return patch.substring(0, maxPatchSize) + truncationMessage;
     }
+
     return patch;
   } catch (error) {
     console.warn(`Error limiting patch: ${error.message}`);
