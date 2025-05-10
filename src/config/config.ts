@@ -1,7 +1,24 @@
 import { config } from 'dotenv';
+import { readFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
 // Load environment variables from .env file
 config();
+
+// Get package.json version
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageJsonPath = resolve(__dirname, '../../package.json');
+const packageVersion = (() => {
+  try {
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+    return packageJson.version || '0.1.0';
+  } catch {
+    console.warn('Could not read package.json version, using default');
+    return '0.1.0';
+  }
+})();
 
 export interface ServerConfig {
   port: number;
@@ -20,7 +37,7 @@ export interface NextcloudConfig {
 const defaultConfig: ServerConfig = {
   port: 3001,
   serverName: 'nextcloud-calendar-server',
-  serverVersion: '1.0.0',
+  serverVersion: packageVersion,
   environment: 'development',
   keepAliveInterval: 30000, // Default: 30 seconds
 };
@@ -38,7 +55,7 @@ export function validateEnvironmentVariables(): {
   const missing: string[] = [];
 
   // Check basic server environment variables (optional but recommended)
-  const serverVars = ['PORT', 'SERVER_NAME', 'SERVER_VERSION', 'NODE_ENV'];
+  const serverVars = ['PORT', 'SERVER_NAME', 'NODE_ENV'];
 
   // Check Nextcloud environment variables (required for calendar functionality)
   const nextcloudVars = ['NEXTCLOUD_BASE_URL', 'NEXTCLOUD_USERNAME', 'NEXTCLOUD_APP_TOKEN'];
