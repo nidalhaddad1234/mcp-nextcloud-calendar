@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nextcloud Calendar MCP Server</title>
+    <meta name="description" content="MCP-compliant server for Nextcloud Calendar integration with Claude Desktop and AI assistants">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 3rem;
+        }
+        
+        .header h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+        
+        .content {
+            background: white;
+            border-radius: 15px;
+            padding: 3rem;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+        
+        .install-section {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 2rem;
+            margin: 2rem 0;
+            border-left: 5px solid #667eea;
+        }
+        
+        .install-section h3 {
+            color: #667eea;
+            margin-bottom: 1rem;
+        }
+        
+        pre {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 1.5rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 1rem 0;
+            font-size: 0.9rem;
+        }
+        
+        code {
+            background: #e2e8f0;
+            color: #2d3748;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+        
+        .feature {
+            background: #f8f9fa;
+            padding: 1.5rem;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .feature h3 {
+            color: #667eea;
+            margin-bottom: 1rem;
+        }
+        
+        .links {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin: 2rem 0;
+        }
+        
+        .link-button {
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            padding: 1rem 2rem;
+            border-radius: 8px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .link-button:hover {
+            background: #5a67d8;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+        }
+        
+        .npm-badge {
+            display: inline-block;
+            margin: 1rem 0;
+        }
+        
+        @media (max-width: 768px) {
+            .container { padding: 1rem; }
+            .header h1 { font-size: 2rem; }
+            .content { padding: 2rem; }
+            .links { flex-direction: column; align-items: center; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📅 Nextcloud Calendar MCP Server</h1>
+            <p>Seamless calendar integration for Claude Desktop and AI assistants</p>
+        </div>
+        
+        <div class="content">
+            <div class="npm-badge">
+                <img src="https://badge.fury.io/js/%40nidalhaddad1234%2Fmcp-nextcloud-calendar.svg" alt="npm version">
+                <img src="https://img.shields.io/npm/dt/@nidalhaddad1234/mcp-nextcloud-calendar.svg" alt="npm downloads">
+            </div>
+            
+            <h2>🚀 What is this?</h2>
+            <p>A <strong>Model Context Protocol (MCP) compliant</strong> server that connects your Nextcloud Calendar with Claude Desktop and other AI assistants. Manage your calendar through natural language conversations!</p>
+            
+            <div class="features">
+                <div class="feature">
+                    <h3>✅ MCP Protocol Compliant</h3>
+                    <p>Fully compatible with Claude Desktop and other MCP clients. No JSON parsing errors!</p>
+                </div>
+                <div class="feature">
+                    <h3>📅 Full Calendar Management</h3>
+                    <p>Create, read, update, and delete calendars and events through natural language.</p>
+                </div>
+                <div class="feature">
+                    <h3>🔄 Real-time Sync</h3>
+                    <p>Direct integration with Nextcloud Calendar via CalDAV protocol.</p>
+                </div>
+                <div class="feature">
+                    <h3>🛡️ Secure</h3>
+                    <p>Uses Nextcloud app tokens for secure, limited-scope access.</p>
+                </div>
+            </div>
+            
+            <div class="install-section">
+                <h3>📦 Quick Install</h3>
+                <pre><code>npm install -g @nidalhaddad1234/mcp-nextcloud-calendar</code></pre>
+            </div>
+            
+            <div class="install-section">
+                <h3>⚙️ Configure Claude Desktop</h3>
+                <p>Add to your <code>claude_desktop_config.json</code>:</p>
+                <pre><code>{
+  "mcpServers": {
+    "nextcloud-calendar": {
+      "command": "nextcloud-calendar",
+      "env": {
+        "NEXTCLOUD_BASE_URL": "https://your-nextcloud.example.com",
+        "NEXTCLOUD_USERNAME": "your-username",
+        "NEXTCLOUD_APP_TOKEN": "your-app-token"
+      }
+    }
+  }
+}</code></pre>
+            </div>
+            
+            <div class="install-section">
+                <h3>🐳 Docker Option</h3>
+                <pre><code>docker run -p 3000:3000 \
+  -e NEXTCLOUD_BASE_URL=https://your-cloud.com \
+  -e NEXTCLOUD_USERNAME=your-username \
+  -e NEXTCLOUD_APP_TOKEN=your-token \
+  nidalhaddad1234/mcp-nextcloud-calendar:latest</code></pre>
+            </div>
+            
+            <h2>💬 Example Usage</h2>
+            <p>Once configured, you can interact with your calendar through Claude:</p>
+            <ul style="margin: 1rem 0; padding-left: 2rem;">
+                <li>"Show me my calendar events for this week"</li>
+                <li>"Create a meeting tomorrow at 2 PM about project planning"</li>
+                <li>"What do I have scheduled for Friday?"</li>
+                <li>"Create a new calendar called 'Personal Projects'"</li>
+                <li>"Cancel my 3 PM meeting on Thursday"</li>
+            </ul>
+            
+            <div class="links">
+                <a href="https://www.npmjs.com/package/@nidalhaddad1234/mcp-nextcloud-calendar" class="link-button">
+                    📦 NPM Package
+                </a>
+                <a href="https://github.com/nidalhaddad1234/mcp-nextcloud-calendar" class="link-button">
+                    💻 GitHub Repository
+                </a>
+                <a href="https://hub.docker.com/r/nidalhaddad1234/mcp-nextcloud-calendar" class="link-button">
+                    🐳 Docker Image
+                </a>
+            </div>
+            
+            <h2>🔧 Requirements</h2>
+            <ul style="margin: 1rem 0; padding-left: 2rem;">
+                <li>Node.js 20 or later</li>
+                <li>Nextcloud server with Calendar app</li>
+                <li>Nextcloud app token (not your regular password)</li>
+                <li>Claude Desktop or other MCP client</li>
+            </ul>
+            
+            <h2>📞 Support</h2>
+            <p>Need help? Check out:</p>
+            <ul style="margin: 1rem 0; padding-left: 2rem;">
+                <li><a href="https://github.com/nidalhaddad1234/mcp-nextcloud-calendar/issues">GitHub Issues</a></li>
+                <li><a href="https://github.com/nidalhaddad1234/mcp-nextcloud-calendar/blob/main/README.md">Documentation</a></li>
+                <li><a href="https://github.com/nidalhaddad1234/mcp-nextcloud-calendar/blob/main/MCP-FIXES.md">Troubleshooting Guide</a></li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>
