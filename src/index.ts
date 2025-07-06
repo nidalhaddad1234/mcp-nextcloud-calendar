@@ -36,9 +36,9 @@ export function handleCalendarToolError(operation: string, error: unknown) {
 // Validate environment variables
 const validation = validateEnvironmentVariables();
 if (validation.missing.length > 0) {
-  console.warn('Some environment variables are missing:');
+  console.error('Some environment variables are missing:');
   validation.missing.forEach((variable) => {
-    console.warn(`  - ${variable}`);
+    console.error(`  - ${variable}`);
   });
 }
 
@@ -55,12 +55,12 @@ const { server: serverConfig, nextcloud: nextcloudConfig } = config;
 
 // Show a clear message about what features are available
 if (!validation.serverReady) {
-  console.warn('WARNING: Server is running with minimal configuration.');
-  console.warn('Some features may not work correctly without proper server configuration.');
+  console.error('WARNING: Server is running with minimal configuration.');
+  console.error('Some features may not work correctly without proper server configuration.');
 }
 
 if (!validation.calendarReady) {
-  console.warn('WARNING: Calendar service is disabled due to missing configuration.');
+  console.error('WARNING: Calendar service is disabled due to missing configuration.');
 }
 
 // Initialize services
@@ -71,7 +71,7 @@ let eventService: EventService | null = null;
 if (validation.calendarReady) {
   try {
     calendarService = new CalendarService(nextcloudConfig);
-    console.log('Calendar service initialized successfully');
+    console.error('Calendar service initialized successfully');
   } catch (error) {
     console.error('Failed to initialize calendar service:', error);
   }
@@ -79,20 +79,20 @@ if (validation.calendarReady) {
   try {
     if (calendarService) {
       eventService = new EventService(nextcloudConfig);
-      console.log('Event service initialized successfully');
+      console.error('Event service initialized successfully');
     }
   } catch (error) {
     console.error('Failed to initialize event service:', error);
     eventService = null;
   }
 } else {
-  console.warn(
+  console.error(
     'Calendar services not initialized due to missing environment variables:',
     ['NEXTCLOUD_BASE_URL', 'NEXTCLOUD_USERNAME', 'NEXTCLOUD_APP_TOKEN']
       .filter((varName) => !process.env[varName])
       .join(', '),
   );
-  console.warn('Calendar-related functionality will not be available');
+  console.error('Calendar-related functionality will not be available');
 }
 
 // Import zod for parameter validation
@@ -256,11 +256,11 @@ app.get('/api/calendars', getCalendarsHandler(calendarService));
 
 // Graceful shutdown handling
 const gracefulShutdown = () => {
-  console.log('Shutting down gracefully...');
+  console.error('Shutting down gracefully...');
   server
     .close()
     .then(() => {
-      console.log('Server closed');
+      console.error('Server closed');
       process.exit(0);
     })
     .catch((err) => {
@@ -305,40 +305,40 @@ if (process.env.NODE_ENV !== 'test') {
     const serverName = serverConfig.serverName;
     const serverVersion = serverConfig.serverVersion;
 
-    console.log('='.repeat(80));
-    console.log(`Nextcloud Calendar MCP Server v${serverVersion}`);
-    console.log('='.repeat(80));
+    console.error('='.repeat(80));
+    console.error(`Nextcloud Calendar MCP Server v${serverVersion}`);
+    console.error('='.repeat(80));
 
-    console.log(`\nEnvironment: ${serverConfig.environment}`);
-    console.log(`Server name: ${serverName}`);
+    console.error(`\nEnvironment: ${serverConfig.environment}`);
+    console.error(`Server name: ${serverName}`);
 
-    console.log('\nEndpoints available:');
-    console.log('-------------------');
+    console.error('\nEndpoints available:');
+    console.error('-------------------');
 
     // Display MCP endpoint information for each IP address
     ipAddresses.forEach((ip) => {
-      console.log(`MCP Streamable HTTP: http://${ip}:${serverConfig.port}/mcp`);
-      console.log(`  - Supports GET (SSE streams), POST (messages), DELETE (session termination)`);
-      console.log(`  - MCP Protocol: March 2025 Specification`);
+      console.error(`MCP Streamable HTTP: http://${ip}:${serverConfig.port}/mcp`);
+      console.error(`  - Supports GET (SSE streams), POST (messages), DELETE (session termination)`);
+      console.error(`  - MCP Protocol: March 2025 Specification`);
 
-      console.log(`\nLegacy HTTP+SSE endpoints:`);
-      console.log(`  - SSE stream: http://${ip}:${serverConfig.port}/sse`);
-      console.log(`  - Messages: http://${ip}:${serverConfig.port}/messages?sessionId=X`);
-      console.log(`  - MCP Protocol: 2024-11-05 Specification (backward compatibility)`);
+      console.error(`\nLegacy HTTP+SSE endpoints:`);
+      console.error(`  - SSE stream: http://${ip}:${serverConfig.port}/sse`);
+      console.error(`  - Messages: http://${ip}:${serverConfig.port}/messages?sessionId=X`);
+      console.error(`  - MCP Protocol: 2024-11-05 Specification (backward compatibility)`);
     });
 
-    console.log('\nHealth check endpoint:');
+    console.error('\nHealth check endpoint:');
     ipAddresses.forEach((ip) => {
-      console.log(`  - http://${ip}:${serverConfig.port}/health`);
+      console.error(`  - http://${ip}:${serverConfig.port}/health`);
     });
 
-    console.log('\nCalendar API endpoint:');
+    console.error('\nCalendar API endpoint:');
     ipAddresses.forEach((ip) => {
-      console.log(`  - http://${ip}:${serverConfig.port}/api/calendars`);
+      console.error(`  - http://${ip}:${serverConfig.port}/api/calendars`);
     });
 
-    console.log('\nServer is running and ready to accept connections.');
-    console.log('='.repeat(80));
+    console.error('\nServer is running and ready to accept connections.');
+    console.error('='.repeat(80));
   });
 }
 

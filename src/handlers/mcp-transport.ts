@@ -70,15 +70,15 @@ function startKeepAlivePinger(sessionId: string, res: Response): void {
   // Clear existing timer if there is one
   if (keepAliveTimers[sessionId]) {
     clearInterval(keepAliveTimers[sessionId]);
-    console.log(`Cleared existing keep-alive timer for session ${sessionId}`);
+    console.error(`Cleared existing keep-alive timer for session ${sessionId}`);
   }
 
   // Create a new keep-alive interval
   keepAliveTimers[sessionId] = setInterval(() => {
     try {
       if (transports[sessionId]) {
-        res.write('event: ping\ndata: keep-alive\n\n');
-        console.log(`Sent keep-alive ping for session ${sessionId}`);
+        res.write('event: ping\\ndata: keep-alive\\n\\n');
+        console.error(`Sent keep-alive ping for session ${sessionId}`);
       } else {
         stopKeepAlivePinger(sessionId);
       }
@@ -88,7 +88,7 @@ function startKeepAlivePinger(sessionId: string, res: Response): void {
     }
   }, KEEP_ALIVE_INTERVAL);
 
-  console.log(
+  console.error(
     `Started keep-alive pinger for session ${sessionId} (interval: ${KEEP_ALIVE_INTERVAL}ms)`,
   );
 }
@@ -101,7 +101,7 @@ function stopKeepAlivePinger(sessionId: string): void {
   if (keepAliveTimers[sessionId]) {
     clearInterval(keepAliveTimers[sessionId]);
     delete keepAliveTimers[sessionId];
-    console.log(`Stopped keep-alive pinger for session ${sessionId}`);
+    console.error(`Stopped keep-alive pinger for session ${sessionId}`);
   }
 }
 
@@ -110,7 +110,7 @@ function stopKeepAlivePinger(sessionId: string): void {
  * @param sessionId The session ID to clean up
  */
 function cleanupSession(sessionId: string): void {
-  console.log(`Cleaning up session ${sessionId}`);
+  console.error(`Cleaning up session ${sessionId}`);
 
   // Stop keep-alive pinger
   stopKeepAlivePinger(sessionId);
@@ -118,10 +118,10 @@ function cleanupSession(sessionId: string): void {
   // Remove transport
   if (transports[sessionId]) {
     delete transports[sessionId];
-    console.log(`Removed transport for session ${sessionId}`);
+    console.error(`Removed transport for session ${sessionId}`);
   }
 
-  console.log(`Active sessions after cleanup: ${Object.keys(transports).length}`);
+  console.error(`Active sessions after cleanup: ${Object.keys(transports).length}`);
 }
 
 // Streamable HTTP transport handlers
@@ -129,10 +129,10 @@ export function setupMcpTransport(server: McpServer) {
   // Unified MCP endpoint - handles both GET for SSE and POST for messages
   // Implements the Streamable HTTP transport (latest spec)
   const mcpHandler: RequestHandler = async (req: Request, res: Response): Promise<void> => {
-    console.log(
+    console.error(
       `MCP ${req.method} request received, session ID: ${req.headers['mcp-session-id'] || 'none'}`,
     );
-    console.log(
+    console.error(
       `Active sessions: ${Object.keys(transports).length} [${Object.keys(transports).join(', ')}]`,
     );
     // For DELETE requests - terminate session if it exists
@@ -149,7 +149,7 @@ export function setupMcpTransport(server: McpServer) {
 
     // For GET requests - initialize SSE stream
     if (req.method === 'GET') {
-      console.log('Streamable HTTP GET request received (SSE stream)');
+      console.error('Streamable HTTP GET request received (SSE stream)');
 
       // Set appropriate headers for SSE
       res.setHeader('Content-Type', 'text/event-stream');
@@ -162,29 +162,29 @@ export function setupMcpTransport(server: McpServer) {
 
         // Use provided session ID if exists, otherwise use transport's generated one
         const sessionId = (req.headers['mcp-session-id'] as string) || transport.sessionId;
-        console.log(`Streamable HTTP SSE transport created with sessionId: ${sessionId}`);
+        console.error(`Streamable HTTP SSE transport created with sessionId: ${sessionId}`);
 
         // Store transport with session ID
         transports[sessionId] = transport;
-        console.log(
+        console.error(
           `Active sessions: ${Object.keys(transports).length} [${Object.keys(transports).join(', ')}]`,
         );
 
         // Add session ID header if not provided by client
         if (!req.headers['mcp-session-id']) {
           res.setHeader('Mcp-Session-Id', sessionId);
-          console.log(`Added Mcp-Session-Id header: ${sessionId}`);
+          console.error(`Added Mcp-Session-Id header: ${sessionId}`);
         }
 
         // Add a close event handler
         res.on('close', () => {
-          console.log(`Streamable HTTP SSE connection closed for sessionId: ${sessionId}`);
+          console.error(`Streamable HTTP SSE connection closed for sessionId: ${sessionId}`);
           cleanupSession(sessionId);
         });
 
         // Connect to the MCP server - this will start the transport automatically
         await server.connect(transport);
-        console.log(`Streamable HTTP SSE transport connected to MCP server`);
+        console.error(`Streamable HTTP SSE transport connected to MCP server`);
 
         // Start keep-alive pinger
         startKeepAlivePinger(sessionId, res);
@@ -207,7 +207,7 @@ export function setupMcpTransport(server: McpServer) {
       if (sessionId && transports[sessionId]) {
         const transport = transports[sessionId];
         try {
-          console.log(`Processing message for session ${sessionId}`);
+          console.error(`Processing message for session ${sessionId}`);
 
           // Pass parsed body to handlePostMessage to avoid it trying to parse the body again
           await transport.handlePostMessage(req, res, req.body);
@@ -261,7 +261,7 @@ export function setupMcpTransport(server: McpServer) {
 
   // Legacy SSE endpoint handler (for backward compatibility)
   const sseHandler: RequestHandler = async (req: Request, res: Response): Promise<void> => {
-    console.log('Legacy SSE connection request received');
+    console.error('Legacy SSE connection request received');
 
     // Set appropriate headers for SSE
     res.setHeader('Content-Type', 'text/event-stream');
@@ -272,23 +272,23 @@ export function setupMcpTransport(server: McpServer) {
       // Create a new SSE transport with the legacy endpoint
       const transport = new SSEServerTransport('/messages', res);
       const sessionId = transport.sessionId;
-      console.log(`Legacy SSE transport created with sessionId: ${sessionId}`);
+      console.error(`Legacy SSE transport created with sessionId: ${sessionId}`);
 
       // Store the transport by session ID
       transports[sessionId] = transport;
-      console.log(
+      console.error(
         `Active sessions: ${Object.keys(transports).length} [${Object.keys(transports).join(', ')}]`,
       );
 
       // Add a close event handler to clean up resources when the connection closes
       res.on('close', () => {
-        console.log(`Legacy SSE connection closed for sessionId: ${sessionId}`);
+        console.error(`Legacy SSE connection closed for sessionId: ${sessionId}`);
         cleanupSession(sessionId);
       });
 
       // Connect to the MCP server - this will start the transport automatically
       await server.connect(transport);
-      console.log(`Legacy SSE transport connected to MCP server`);
+      console.error(`Legacy SSE transport connected to MCP server`);
 
       // Start keep-alive pinger
       startKeepAlivePinger(sessionId, res);
@@ -301,8 +301,8 @@ export function setupMcpTransport(server: McpServer) {
   // Legacy message handling endpoint (for backward compatibility)
   const messageHandler: RequestHandler = async (req: Request, res: Response): Promise<void> => {
     const sessionId = req.query.sessionId as string;
-    console.log(`Legacy message POST received, query sessionId: ${sessionId || 'none'}`);
-    console.log(
+    console.error(`Legacy message POST received, query sessionId: ${sessionId || 'none'}`);
+    console.error(
       `Active sessions: ${Object.keys(transports).length} [${Object.keys(transports).join(', ')}]`,
     );
 
@@ -315,13 +315,13 @@ export function setupMcpTransport(server: McpServer) {
     const transport = transports[sessionId];
 
     if (!transport) {
-      console.warn(`No transport found for sessionId ${sessionId}`);
+      console.error(`No transport found for sessionId ${sessionId}`);
       res.status(404).json({ error: 'No transport found for sessionId' });
       return;
     }
 
     try {
-      console.log(`Processing legacy message for session ${sessionId}`);
+      console.error(`Processing legacy message for session ${sessionId}`);
 
       // Pass parsed body to handlePostMessage to avoid it trying to parse the body again
       await transport.handlePostMessage(req, res, req.body);
