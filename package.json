@@ -4,7 +4,7 @@
   "type": "module",
   "main": "build/index.js",
   "bin": {
-    "mcp-nextcloud-calendar": "build/index.js"
+    "nextcloud-calendar": "build/index.js"
   },
   "scripts": {
     "build": "tsc --skipLibCheck && chmod 755 build/index.js",
@@ -25,31 +25,24 @@
       "eslint --fix"
     ]
   },
-  "files": [
-    "build/**/*",
-    "README.md",
-    "LICENSE.md",
-    "MCP-FIXES.md",
-    ".env.example"
-  ],
   "keywords": [
     "nextcloud",
     "calendar",
     "mcp",
     "model-context-protocol",
-    "claude",
-    "ai",
+    "claude-desktop",
+    "ai-tools",
     "caldav",
     "calendar-integration"
   ],
   "author": {
     "name": "Nidal Haddad",
-    "email": "133358817+nidalhaddad1234@users.noreply.github.com",
+    "email": "your-email@example.com",
     "url": "https://github.com/nidalhaddad1234"
   },
-  "license": "ISC",
-  "description": "MCP server for Nextcloud Calendar integration with Claude Desktop - fully protocol compliant",
-  "homepage": "https://github.com/nidalhaddad1234/mcp-nextcloud-calendar",
+  "license": "MIT",
+  "description": "MCP-compliant server for Nextcloud Calendar integration with Claude Desktop and other AI assistants",
+  "homepage": "https://github.com/nidalhaddad1234/mcp-nextcloud-calendar#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nidalhaddad1234/mcp-nextcloud-calendar.git"
@@ -57,6 +50,16 @@
   "bugs": {
     "url": "https://github.com/nidalhaddad1234/mcp-nextcloud-calendar/issues"
   },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "build/**/*",
+    "README.md",
+    "LICENSE.md",
+    "MCP-FIXES.md",
+    ".env.example"
+  ],
   "engines": {
     "node": ">=20.0.0"
   },
