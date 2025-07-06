@@ -1,4 +1,13 @@
 #!/usr/bin/env node
+
+// ===== MCP PROTOCOL COMPLIANCE =====
+// Force disable all colored output to ensure MCP protocol compliance
+// The MCP protocol requires ONLY JSON-RPC messages on stdout
+// All debug/logging output must go to stderr without ANSI escape sequences
+process.env.NO_COLOR = '1';
+process.env.FORCE_COLOR = '0';
+process.env.NODE_DISABLE_COLORS = '1';
+
 // Import Express in a way compatible with both ESM and TypeScript
 import express from 'express';
 // Import the MCP server with now-proper type definitions
