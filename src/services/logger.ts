@@ -1,6 +1,7 @@
 /**
- * Logger utility for consistent logging throughout the application
+ * MCP-compliant logger utility for consistent logging throughout the application
  * Provides different log levels and context-aware logging
+ * All output goes to stderr to maintain MCP protocol compliance
  */
 
 // Log levels
@@ -15,20 +16,24 @@ export enum LogLevel {
 const ENV_LOG_LEVEL = process.env.LOG_LEVEL?.toUpperCase() || 'INFO';
 const DEFAULT_LOG_LEVEL = LogLevel[ENV_LOG_LEVEL as keyof typeof LogLevel] || LogLevel.INFO;
 
-// Color codes for terminal output
+// Disable colors for MCP compliance - all output must go to stderr without ANSI codes
+const USE_COLORS = false; // Always false for MCP compliance
+
+// Color codes for terminal output (disabled for MCP)
 const COLORS = {
-  reset: '\x1b[0m',
-  red: '\x1b[31m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  blue: '\x1b[34m',
-  magenta: '\x1b[35m',
-  cyan: '\x1b[36m',
-  gray: '\x1b[90m',
+  reset: USE_COLORS ? '\x1b[0m' : '',
+  red: USE_COLORS ? '\x1b[31m' : '',
+  green: USE_COLORS ? '\x1b[32m' : '',
+  yellow: USE_COLORS ? '\x1b[33m' : '',
+  blue: USE_COLORS ? '\x1b[34m' : '',
+  magenta: USE_COLORS ? '\x1b[35m' : '',
+  cyan: USE_COLORS ? '\x1b[36m' : '',
+  gray: USE_COLORS ? '\x1b[90m' : '',
 };
 
 /**
  * Logger class for enhanced logging capabilities
+ * MCP-compliant: all output goes to stderr
  */
 export class Logger {
   private context: string;
@@ -96,6 +101,7 @@ export class Logger {
   /**
    * Debug level logging, usually only enabled in development
    * Automatically masks sensitive information in parameters
+   * MCP-compliant: outputs to stderr
    */
   debug(message: string, ...optionalParams: unknown[]): void {
     if (this.logLevel <= LogLevel.DEBUG) {
@@ -104,7 +110,7 @@ export class Logger {
         typeof param === 'object' ? Logger.maskSensitiveData(param) : param
       );
 
-      console.log(
+      console.error(
         COLORS.gray + this.formatMessage('DEBUG', message) + COLORS.reset,
         ...maskedParams
       );
@@ -114,6 +120,7 @@ export class Logger {
   /**
    * Info level logging for general application information
    * Automatically masks sensitive information in parameters
+   * MCP-compliant: outputs to stderr
    */
   info(message: string, ...optionalParams: unknown[]): void {
     if (this.logLevel <= LogLevel.INFO) {
@@ -122,7 +129,7 @@ export class Logger {
         typeof param === 'object' ? Logger.maskSensitiveData(param) : param
       );
 
-      console.log(
+      console.error(
         COLORS.green + this.formatMessage('INFO', message) + COLORS.reset,
         ...maskedParams
       );
@@ -132,6 +139,7 @@ export class Logger {
   /**
    * Warning level logging for potential issues that don't block execution
    * Automatically masks sensitive information in parameters
+   * MCP-compliant: outputs to stderr
    */
   warn(message: string, ...optionalParams: unknown[]): void {
     if (this.logLevel <= LogLevel.WARN) {
@@ -140,7 +148,7 @@ export class Logger {
         typeof param === 'object' ? Logger.maskSensitiveData(param) : param
       );
 
-      console.warn(
+      console.error(
         COLORS.yellow + this.formatMessage('WARN', message) + COLORS.reset,
         ...maskedParams
       );
@@ -150,6 +158,7 @@ export class Logger {
   /**
    * Error level logging for actual errors that might affect functionality
    * Automatically masks sensitive information in parameters
+   * MCP-compliant: outputs to stderr
    */
   error(message: string, ...optionalParams: unknown[]): void {
     if (this.logLevel <= LogLevel.ERROR) {
