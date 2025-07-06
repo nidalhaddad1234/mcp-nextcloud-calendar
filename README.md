@@ -1,65 +1,56 @@
-# 🗓️ MCP Nextcloud Calendar Server
+# Nextcloud Calendar MCP Server
 
-[![npm version](https://badge.fury.io/js/@nidalhaddad1234/mcp-nextcloud-calendar.svg)](https://badge.fury.io/js/@nidalhaddad1234/mcp-nextcloud-calendar)
-[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
-[![Node.js Version](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen)](https://nodejs.org/)
+[![npm version](https://badge.fury.io/js/%40nidalhaddad1234%2Fmcp-nextcloud-calendar.svg)](https://badge.fury.io/js/%40nidalhaddad1234%2Fmcp-nextcloud-calendar)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A **fully MCP-compliant** server that integrates Nextcloud Calendar with Claude Desktop and other Model Context Protocol clients. Now with **fixed JSON parsing issues** and complete protocol compliance!
+A **Model Context Protocol (MCP) compliant** server that integrates Nextcloud Calendar with Claude Desktop and other AI assistants. This server provides seamless calendar management capabilities through natural language interactions.
 
-## ✨ **Key Features**
+## 🚀 **Quick Install**
 
-- 🔗 **Complete Nextcloud Calendar Integration** - List, create, update, and delete calendars
-- 📅 **Full Event Management** - Create, read, update, delete calendar events  
-- 🤖 **Claude Desktop Compatible** - Works seamlessly with Claude Desktop
-- 🔒 **Secure Authentication** - Uses Nextcloud app tokens
-- 🚀 **MCP Protocol Compliant** - Follows latest MCP specification
-- 🛠️ **Easy Installation** - One command setup via NPM
+```bash
+# Install globally via NPM
+npm install -g @nidalhaddad1234/mcp-nextcloud-calendar
 
-## 🚀 **Quick Start**
+# Or install locally
+npm install @nidalhaddad1234/mcp-nextcloud-calendar
+```
 
-### Install via NPM
+## 📋 **Features**
+
+- ✅ **MCP Protocol Compliant** - Works with Claude Desktop, Claude API, and other MCP clients
+- 📅 **Full Calendar Management** - Create, read, update, delete calendars and events
+- 🔄 **Real-time Sync** - Direct integration with Nextcloud Calendar via CalDAV
+- 🛡️ **Secure Authentication** - Uses Nextcloud app tokens for secure access
+- 🌐 **Multi-transport Support** - HTTP, SSE, and WebSocket transports
+- 📊 **Rich Event Handling** - Recurring events, reminders, attendees, and more
+
+## ⚡ **Quick Start**
+
+### 1. Install the Package
 ```bash
 npm install -g @nidalhaddad1234/mcp-nextcloud-calendar
 ```
 
-### Install via Git
+### 2. Set Environment Variables
+Create a `.env` file or set environment variables:
 ```bash
-git clone https://github.com/nidalhaddad1234/mcp-nextcloud-calendar.git
-cd mcp-nextcloud-calendar
-npm install
-npm run build
+export NEXTCLOUD_BASE_URL="https://your-nextcloud.example.com"
+export NEXTCLOUD_USERNAME="your-username"
+export NEXTCLOUD_APP_TOKEN="your-app-token"
 ```
 
-## ⚙️ **Configuration**
-
-### 1. Set up Nextcloud App Token
-1. Go to your Nextcloud instance → Settings → Security
-2. Create a new "App password" for the MCP server
-3. Copy the generated token
-
-### 2. Environment Variables
-Create a `.env` file or set these environment variables:
-
+### 3. Run the Server
 ```bash
-NEXTCLOUD_BASE_URL=https://your-nextcloud.example.com
-NEXTCLOUD_USERNAME=your-username
-NEXTCLOUD_APP_TOKEN=your-app-token
-
-# Optional
-PORT=3000
-SERVER_NAME=nextcloud-calendar-mcp
-SERVER_VERSION=1.0.0
-NODE_ENV=production
+nextcloud-calendar
 ```
 
-### 3. Claude Desktop Configuration
+### 4. Configure Claude Desktop
 Add to your `claude_desktop_config.json`:
-
 ```json
 {
   "mcpServers": {
     "nextcloud-calendar": {
-      "command": "mcp-nextcloud-calendar",
+      "command": "nextcloud-calendar",
       "env": {
         "NEXTCLOUD_BASE_URL": "https://your-nextcloud.example.com",
         "NEXTCLOUD_USERNAME": "your-username",
@@ -70,102 +61,136 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-## 🔧 **Available Tools**
+## 🔧 **Configuration**
+
+### Required Environment Variables
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `NEXTCLOUD_BASE_URL` | Your Nextcloud server URL | `https://cloud.example.com` |
+| `NEXTCLOUD_USERNAME` | Nextcloud username | `john.doe` |
+| `NEXTCLOUD_APP_TOKEN` | Nextcloud app password/token | `abcd-efgh-ijkl-mnop` |
+
+### Optional Environment Variables
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3000` | Server port |
+| `SERVER_NAME` | `nextcloud-calendar-mcp` | Server identifier |
+| `NODE_ENV` | `production` | Environment mode |
+
+### Generate Nextcloud App Token
+1. Go to Nextcloud → Settings → Personal → Security
+2. Create new App Password
+3. Copy the generated token (not your regular password!)
+
+## 🛠️ **Available Tools**
+
+Once connected, you can use these calendar tools through Claude:
 
 ### Calendar Management
-- `listCalendars` - Get all available calendars
+- `listCalendars` - List all available calendars
 - `createCalendar` - Create a new calendar
-- `updateCalendar` - Update calendar properties  
-- `deleteCalendar` - Remove a calendar
+- `updateCalendar` - Update calendar properties
+- `deleteCalendar` - Delete a calendar
 
 ### Event Management
-- `listEvents` - Get events from calendars
-- `createEvent` - Create new calendar events
-- `updateEvent` - Modify existing events
-- `deleteEvent` - Remove events
-- `searchEvents` - Find events by criteria
+- `listEvents` - List events with filtering options
+- `createEvent` - Create new events with full details
+- `updateEvent` - Update existing events
+- `deleteEvent` - Delete events
+- `searchEvents` - Search events by text/date
 
-## 🐛 **Troubleshooting**
+## 💬 **Usage Examples**
 
-### JSON Parsing Errors (Fixed!)
-This version fixes the common JSON parsing errors that occurred with previous versions:
-- ✅ All debug output now goes to stderr (MCP compliant)
-- ✅ Clean JSON-RPC communication on stdout
-- ✅ No more "Unexpected token" errors in Claude Desktop
+After setup, you can interact with your calendar through Claude:
 
-### Connection Issues
-```bash
-# Test server manually
-mcp-nextcloud-calendar
-
-# Check Nextcloud connectivity
-curl -u "username:app-token" "https://your-nextcloud.example.com/remote.php/dav/calendars/username/"
+```
+"Show me my calendar events for this week"
+"Create a meeting tomorrow at 2 PM about project planning"
+"What do I have scheduled for Friday?"
+"Create a new calendar called 'Personal Projects'"
+"Cancel my 3 PM meeting on Thursday"
 ```
 
-### Common Problems
-- **404 Errors**: Check NEXTCLOUD_BASE_URL format (include https://)
-- **Auth Errors**: Verify NEXTCLOUD_APP_TOKEN is correct
-- **Network Issues**: Ensure Nextcloud is accessible from your machine
+## 🏗️ **Development**
 
-## 🧪 **Development**
-
+### Local Development
 ```bash
-# Clone and setup
+# Clone the repository
 git clone https://github.com/nidalhaddad1234/mcp-nextcloud-calendar.git
 cd mcp-nextcloud-calendar
+
+# Install dependencies
 npm install
 
-# Development workflow
-npm run dev          # Build and run
-npm run dev:watch    # Watch mode
-npm run test         # Run tests
-npm run lint         # Code quality
-npm run format       # Code formatting
+# Build the project
+npm run build
+
+# Run in development mode
+npm run dev
 ```
 
-## 🔄 **API Endpoints**
+### Testing
+```bash
+# Run tests
+npm test
 
-The server also exposes HTTP endpoints for testing:
+# Run linting
+npm run lint
 
-- `GET /health` - Health check
-- `GET /api/calendars` - List calendars via REST
-- `GET /mcp` - MCP Streamable HTTP endpoint
-- `GET /sse` - Legacy SSE endpoint (backward compatibility)
+# Format code
+npm run format
+```
 
-## 📝 **Protocol Compliance**
+## 🔍 **Troubleshooting**
 
-This server implements:
-- ✅ **MCP Streamable HTTP** (March 2025 specification)
-- ✅ **Legacy HTTP+SSE** (2024-11-05 specification) 
-- ✅ **Proper stdout/stderr separation**
-- ✅ **Session management**
-- ✅ **Error handling**
+### Common Issues
+
+**❌ JSON parsing errors in Claude Desktop**
+- ✅ **Fixed in v1.0.0+** - All debug output now goes to stderr
+
+**❌ Connection refused**
+- Check your Nextcloud URL and credentials
+- Ensure app token is correctly generated
+- Verify network connectivity
+
+**❌ Calendar tools not appearing**
+- Restart Claude Desktop after configuration changes
+- Check environment variables are set correctly
+- Verify MCP server is running without errors
+
+### Debug Mode
+```bash
+# Enable debug logging
+DEBUG=1 nextcloud-calendar
+
+# Check server status
+curl http://localhost:3000/health
+```
+
+## 📄 **License**
+
+MIT License - see [LICENSE.md](LICENSE.md)
 
 ## 🤝 **Contributing**
 
 1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'Add amazing feature'`
-4. Push to branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Submit a pull request
 
-## 📄 **License**
+## 📞 **Support**
 
-This project is licensed under the ISC License - see the [LICENSE.md](LICENSE.md) file for details.
+- **Issues**: [GitHub Issues](https://github.com/nidalhaddad1234/mcp-nextcloud-calendar/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/nidalhaddad1234/mcp-nextcloud-calendar/discussions)
+- **Documentation**: [MCP-FIXES.md](MCP-FIXES.md)
 
-## 🙏 **Acknowledgments**
+## 🌟 **Related Projects**
 
-- Based on the original work by [Cheffromspace](https://github.com/Cheffromspace/mcp-nextcloud-calendar)
-- Built with the [Model Context Protocol SDK](https://github.com/modelcontextprotocol/sdk)
-- Fixes applied for Claude Desktop compatibility
-
-## 🔗 **Links**
-
-- [GitHub Repository](https://github.com/nidalhaddad1234/mcp-nextcloud-calendar)
-- [NPM Package](https://www.npmjs.com/package/@nidalhaddad1234/mcp-nextcloud-calendar)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
 - [Claude Desktop](https://claude.ai/desktop)
+- [Nextcloud Calendar](https://apps.nextcloud.com/apps/calendar)
 
 ---
 
-**Need help?** [Open an issue](https://github.com/nidalhaddad1234/mcp-nextcloud-calendar/issues) on GitHub!
+**Made with ❤️ for the MCP community**
