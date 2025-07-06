@@ -1,10 +1,10 @@
 {
-  "name": "mcp-nextcloud-calendar",
-  "version": "0.1.0",
+  "name": "@nidalhaddad1234/mcp-nextcloud-calendar",
+  "version": "1.0.0",
   "type": "module",
   "main": "build/index.js",
   "bin": {
-    "nextcloud-calendar": "build/index.js"
+    "mcp-nextcloud-calendar": "build/index.js"
   },
   "scripts": {
     "build": "tsc --skipLibCheck && chmod 755 build/index.js",
@@ -16,7 +16,8 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit --skipLibCheck",
-    "prepare": "husky"
+    "prepare": "husky",
+    "prepublishOnly": "npm run build && npm run test && npm run lint"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
@@ -24,14 +25,38 @@
       "eslint --fix"
     ]
   },
+  "files": [
+    "build/**/*",
+    "README.md",
+    "LICENSE.md",
+    "MCP-FIXES.md",
+    ".env.example"
+  ],
   "keywords": [
     "nextcloud",
     "calendar",
-    "mcp"
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "ai",
+    "caldav",
+    "calendar-integration"
   ],
-  "author": "",
+  "author": {
+    "name": "Nidal Haddad",
+    "email": "your-email@example.com",
+    "url": "https://github.com/nidalhaddad1234"
+  },
   "license": "ISC",
-  "description": "MCP server for Nextcloud Calendar integration",
+  "description": "MCP server for Nextcloud Calendar integration with Claude Desktop - fully protocol compliant",
+  "homepage": "https://github.com/nidalhaddad1234/mcp-nextcloud-calendar",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nidalhaddad1234/mcp-nextcloud-calendar.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nidalhaddad1234/mcp-nextcloud-calendar/issues"
+  },
   "engines": {
     "node": ">=20.0.0"
   },
