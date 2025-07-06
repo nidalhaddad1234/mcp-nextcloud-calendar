@@ -8,11 +8,43 @@ process.env.NO_COLOR = '1';
 process.env.FORCE_COLOR = '0';
 process.env.NODE_DISABLE_COLORS = '1';
 
+// ===== PROCESS ERROR HANDLING =====
+// Add comprehensive error handling to prevent unexpected process exits
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  console.error('Stack:', error.stack);
+  // Don't exit on uncaught exceptions in MCP context
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit on unhandled rejections in MCP context
+});
+
+process.on('warning', (warning) => {
+  console.error('Process Warning:', warning.name, warning.message);
+});
+
+// Handle process exit signals gracefully
+process.on('SIGTERM', () => {
+  console.error('SIGTERM received, shutting down gracefully');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.error('SIGINT received, shutting down gracefully');
+  process.exit(0);
+});
+
+// Prevent the process from exiting on pipe errors (common with MCP)
+process.on('SIGPIPE', () => {
+  console.error('SIGPIPE received, ignoring');
+});
+
 // Import Express in a way compatible with both ESM and TypeScript
 import express from 'express';
 // Import the MCP server with now-proper type definitions
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { loadConfig, validateEnvironmentVariables } from './config/config.js';
 import { healthHandler } from './handlers/health.js';
 import { setupMcpTransport } from './handlers/mcp-transport.js';
@@ -43,15 +75,11 @@ export function handleCalendarToolError(operation: string, error: unknown) {
   };
 }
 
-// Detect if we're running in stdio mode (launched by Claude Desktop)
-// vs HTTP mode (standalone server)
-const isStdioMode = !process.stdout.isTTY || process.argv.includes('--stdio');
-
-if (isStdioMode) {
-  console.error('Starting in stdio mode for MCP client connection...');
-} else {
-  console.error('Starting in HTTP server mode...');
-}
+// Add startup logging
+console.error('MCP Nextcloud Calendar Server starting...');
+console.error('Process ID:', process.pid);
+console.error('Node.js version:', process.version);
+console.error('Environment:', process.env.NODE_ENV || 'development');
 
 // Validate environment variables
 const validation = validateEnvironmentVariables();
@@ -73,6 +101,13 @@ if (!validation.isValid) {
 const config = loadConfig();
 const { server: serverConfig, nextcloud: nextcloudConfig } = config;
 
+console.error('Configuration loaded successfully');
+console.error('Server config:', { 
+  port: serverConfig.port, 
+  name: serverConfig.serverName,
+  version: serverConfig.serverVersion 
+});
+
 // Show a clear message about what features are available
 if (!validation.serverReady) {
   console.error('WARNING: Server is running with minimal configuration.');
@@ -90,6 +125,7 @@ let eventService: EventService | null = null;
 // Only try to initialize calendar service if all required environment variables are available
 if (validation.calendarReady) {
   try {
+    console.error('Initializing CalendarService...');
     calendarService = new CalendarService(nextcloudConfig);
     console.error('Calendar service initialized successfully');
   } catch (error) {
@@ -98,6 +134,7 @@ if (validation.calendarReady) {
 
   try {
     if (calendarService) {
+      console.error('Initializing EventService...');
       eventService = new EventService(nextcloudConfig);
       console.error('Event service initialized successfully');
     }
@@ -119,13 +156,23 @@ if (validation.calendarReady) {
 import { z } from 'zod';
 
 // Create MCP server
+console.error('Creating MCP server...');
 const server = new McpServer({
   name: serverConfig.serverName,
   version: serverConfig.serverVersion,
 });
 
+// Add error handler to MCP server
+server.onerror = (error) => {
+  console.error('MCP Server error:', error);
+};
+
+console.error('MCP server created successfully');
+
 // Register calendar tools if calendar service is available
 if (calendarService) {
+  console.error('Registering calendar tools...');
+  
   // List calendars tool
   server.tool('listCalendars', {}, async () => {
     try {
@@ -246,154 +293,142 @@ if (calendarService) {
       }
     },
   );
+  
+  console.error('Calendar tools registered successfully');
 }
 
 // Register event tools
 import { registerEventTools } from './handlers/event-tools.js';
 if (eventService) {
+  console.error('Registering event tools...');
   registerEventTools(server, eventService);
+  console.error('Event tools registered successfully');
 }
 
-// Choose transport based on how we're running
-if (isStdioMode) {
-  // Stdio mode for Claude Desktop
-  console.error('Connecting via stdio transport for MCP client...');
-  
-  const transport = new StdioServerTransport();
-  
-  // Handle graceful shutdown
-  process.on('SIGINT', async () => {
-    console.error('Received SIGINT, shutting down gracefully...');
-    await server.close();
-    process.exit(0);
-  });
+// Setup Express app
+console.error('Setting up Express app...');
+const app = express();
+app.use(express.json());
 
-  process.on('SIGTERM', async () => {
-    console.error('Received SIGTERM, shutting down gracefully...');
-    await server.close();
-    process.exit(0);
-  });
+// Setup handlers
+console.error('Setting up MCP transport...');
+const { mcpHandler, sseHandler, messageHandler } = setupMcpTransport(server);
 
-  // Connect the server to the transport
-  server.connect(transport).then(() => {
-    console.error('MCP server connected via stdio transport');
-  }).catch((error) => {
-    console.error('Failed to connect MCP server:', error);
-    process.exit(1);
-  });
+// Configure routes
+app.get('/health', healthHandler(serverConfig));
 
-} else {
-  // HTTP mode for standalone testing
-  console.error('Starting HTTP server for standalone mode...');
-  
-  // Setup Express app
-  const app = express();
-  app.use(express.json());
+// Modern Streamable HTTP endpoint
+app.all('/mcp', mcpHandler);
 
-  // Setup handlers
-  const { mcpHandler, sseHandler, messageHandler } = setupMcpTransport(server);
+// Legacy HTTP+SSE transport endpoints (for backward compatibility)
+app.get('/sse', sseHandler);
+app.post('/messages', messageHandler);
 
-  // Configure routes
-  app.get('/health', healthHandler(serverConfig));
+// Calendar routes
+app.get('/api/calendars', getCalendarsHandler(calendarService));
 
-  // Modern Streamable HTTP endpoint
-  app.all('/mcp', mcpHandler);
+console.error('Routes configured successfully');
 
-  // Legacy HTTP+SSE transport endpoints (for backward compatibility)
-  app.get('/sse', sseHandler);
-  app.post('/messages', messageHandler);
+// Graceful shutdown handling
+const gracefulShutdown = () => {
+  console.error('Shutting down gracefully...');
+  server
+    .close()
+    .then(() => {
+      console.error('Server closed');
+      process.exit(0);
+    })
+    .catch((err) => {
+      console.error('Error during shutdown:', err);
+      process.exit(1);
+    });
+};
 
-  // Calendar routes
-  app.get('/api/calendars', getCalendarsHandler(calendarService));
+// Handle termination signals
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
 
-  // Graceful shutdown handling
-  const gracefulShutdown = () => {
-    console.error('Shutting down gracefully...');
-    server
-      .close()
-      .then(() => {
-        console.error('Server closed');
-        process.exit(0);
-      })
-      .catch((err) => {
-        console.error('Error during shutdown:', err);
-        process.exit(1);
-      });
-  };
+// Get server's IP address(es)
+function getServerIpAddresses(): string[] {
+  const nets = os.networkInterfaces();
+  const results: string[] = [];
 
-  // Handle termination signals
-  process.on('SIGTERM', gracefulShutdown);
-  process.on('SIGINT', gracefulShutdown);
+  for (const name of Object.keys(nets)) {
+    // Type assertion needed since TypeScript doesn't know the structure
+    const interfaces = nets[name];
+    if (!interfaces) continue;
 
-  // Get server's IP address(es)
-  function getServerIpAddresses(): string[] {
-    const nets = os.networkInterfaces();
-    const results: string[] = [];
-
-    for (const name of Object.keys(nets)) {
-      // Type assertion needed since TypeScript doesn't know the structure
-      const interfaces = nets[name];
-      if (!interfaces) continue;
-
-      for (const net of interfaces) {
-        // Skip internal and non-IPv4 addresses
-        if (!net.internal && net.family === 'IPv4') {
-          results.push(net.address);
-        }
+    for (const net of interfaces) {
+      // Skip internal and non-IPv4 addresses
+      if (!net.internal && net.family === 'IPv4') {
+        results.push(net.address);
       }
     }
-
-    return results.length ? results : ['localhost'];
   }
 
-  // For testing environments, we'll optionally avoid starting the server
-  let httpServer: ReturnType<typeof app.listen> | null = null;
-
-  // Only start the server if we're not in a test environment or if the test explicitly wants a server
-  if (process.env.NODE_ENV !== 'test') {
-    // Start the HTTP server
-    httpServer = app.listen(serverConfig.port, () => {
-      const ipAddresses = getServerIpAddresses();
-      const serverName = serverConfig.serverName;
-      const serverVersion = serverConfig.serverVersion;
-
-      console.error('='.repeat(80));
-      console.error(`Nextcloud Calendar MCP Server v${serverVersion}`);
-      console.error('='.repeat(80));
-
-      console.error(`\nEnvironment: ${serverConfig.environment}`);
-      console.error(`Server name: ${serverName}`);
-
-      console.error('\nEndpoints available:');
-      console.error('-------------------');
-
-      // Display MCP endpoint information for each IP address
-      ipAddresses.forEach((ip) => {
-        console.error(`MCP Streamable HTTP: http://${ip}:${serverConfig.port}/mcp`);
-        console.error(`  - Supports GET (SSE streams), POST (messages), DELETE (session termination)`);
-        console.error(`  - MCP Protocol: March 2025 Specification`);
-
-        console.error(`\nLegacy HTTP+SSE endpoints:`);
-        console.error(`  - SSE stream: http://${ip}:${serverConfig.port}/sse`);
-        console.error(`  - Messages: http://${ip}:${serverConfig.port}/messages?sessionId=X`);
-        console.error(`  - MCP Protocol: 2024-11-05 Specification (backward compatibility)`);
-      });
-
-      console.error('\nHealth check endpoint:');
-      ipAddresses.forEach((ip) => {
-        console.error(`  - http://${ip}:${serverConfig.port}/health`);
-      });
-
-      console.error('\nCalendar API endpoint:');
-      ipAddresses.forEach((ip) => {
-        console.error(`  - http://${ip}:${serverConfig.port}/api/calendars`);
-      });
-
-      console.error('\nServer is running and ready to accept connections.');
-      console.error('='.repeat(80));
-    });
-  }
-
-  // Export for testing
-  export { app, server, httpServer };
+  return results.length ? results : ['localhost'];
 }
+
+// For testing environments, we'll optionally avoid starting the server
+let httpServer: ReturnType<typeof app.listen> | null = null;
+
+// Only start the server if we're not in a test environment or if the test explicitly wants a server
+if (process.env.NODE_ENV !== 'test') {
+  console.error('Starting HTTP server...');
+  
+  // Start the server
+  httpServer = app.listen(serverConfig.port, () => {
+    const ipAddresses = getServerIpAddresses();
+    const serverName = serverConfig.serverName;
+    const serverVersion = serverConfig.serverVersion;
+
+    console.error('='.repeat(80));
+    console.error(`Nextcloud Calendar MCP Server v${serverVersion}`);
+    console.error('='.repeat(80));
+
+    console.error(`\nEnvironment: ${serverConfig.environment}`);
+    console.error(`Server name: ${serverName}`);
+
+    console.error('\nEndpoints available:');
+    console.error('-------------------');
+
+    // Display MCP endpoint information for each IP address
+    ipAddresses.forEach((ip) => {
+      console.error(`MCP Streamable HTTP: http://${ip}:${serverConfig.port}/mcp`);
+      console.error(`  - Supports GET (SSE streams), POST (messages), DELETE (session termination)`);
+      console.error(`  - MCP Protocol: March 2025 Specification`);
+
+      console.error(`\nLegacy HTTP+SSE endpoints:`);
+      console.error(`  - SSE stream: http://${ip}:${serverConfig.port}/sse`);
+      console.error(`  - Messages: http://${ip}:${serverConfig.port}/messages?sessionId=X`);
+      console.error(`  - MCP Protocol: 2024-11-05 Specification (backward compatibility)`);
+    });
+
+    console.error('\nHealth check endpoint:');
+    ipAddresses.forEach((ip) => {
+      console.error(`  - http://${ip}:${serverConfig.port}/health`);
+    });
+
+    console.error('\nCalendar API endpoint:');
+    ipAddresses.forEach((ip) => {
+      console.error(`  - http://${ip}:${serverConfig.port}/api/calendars`);
+    });
+
+    console.error('\nServer is running and ready to accept connections.');
+    console.error('Process will remain alive to handle MCP connections...');
+    console.error('='.repeat(80));
+  });
+
+  // Add error handler to HTTP server
+  httpServer.on('error', (error) => {
+    console.error('HTTP Server error:', error);
+  });
+
+  console.error('HTTP server setup complete');
+}
+
+// Keep the process alive for MCP connections
+console.error('Process setup complete, ready for MCP connections');
+
+// Export for testing
+export { app, server, httpServer };
