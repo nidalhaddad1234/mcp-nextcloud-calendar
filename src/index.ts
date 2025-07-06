@@ -346,48 +346,54 @@ if (isStdioMode) {
     return results.length ? results : ['localhost'];
   }
 
-  // Start the HTTP server
-  const httpServer = app.listen(serverConfig.port, () => {
-    const ipAddresses = getServerIpAddresses();
-    const serverName = serverConfig.serverName;
-    const serverVersion = serverConfig.serverVersion;
+  // For testing environments, we'll optionally avoid starting the server
+  let httpServer: ReturnType<typeof app.listen> | null = null;
 
-    console.error('='.repeat(80));
-    console.error(`Nextcloud Calendar MCP Server v${serverVersion}`);
-    console.error('='.repeat(80));
+  // Only start the server if we're not in a test environment or if the test explicitly wants a server
+  if (process.env.NODE_ENV !== 'test') {
+    // Start the HTTP server
+    httpServer = app.listen(serverConfig.port, () => {
+      const ipAddresses = getServerIpAddresses();
+      const serverName = serverConfig.serverName;
+      const serverVersion = serverConfig.serverVersion;
 
-    console.error(`\nEnvironment: ${serverConfig.environment}`);
-    console.error(`Server name: ${serverName}`);
+      console.error('='.repeat(80));
+      console.error(`Nextcloud Calendar MCP Server v${serverVersion}`);
+      console.error('='.repeat(80));
 
-    console.error('\nEndpoints available:');
-    console.error('-------------------');
+      console.error(`\nEnvironment: ${serverConfig.environment}`);
+      console.error(`Server name: ${serverName}`);
 
-    // Display MCP endpoint information for each IP address
-    ipAddresses.forEach((ip) => {
-      console.error(`MCP Streamable HTTP: http://${ip}:${serverConfig.port}/mcp`);
-      console.error(`  - Supports GET (SSE streams), POST (messages), DELETE (session termination)`);
-      console.error(`  - MCP Protocol: March 2025 Specification`);
+      console.error('\nEndpoints available:');
+      console.error('-------------------');
 
-      console.error(`\nLegacy HTTP+SSE endpoints:`);
-      console.error(`  - SSE stream: http://${ip}:${serverConfig.port}/sse`);
-      console.error(`  - Messages: http://${ip}:${serverConfig.port}/messages?sessionId=X`);
-      console.error(`  - MCP Protocol: 2024-11-05 Specification (backward compatibility)`);
+      // Display MCP endpoint information for each IP address
+      ipAddresses.forEach((ip) => {
+        console.error(`MCP Streamable HTTP: http://${ip}:${serverConfig.port}/mcp`);
+        console.error(`  - Supports GET (SSE streams), POST (messages), DELETE (session termination)`);
+        console.error(`  - MCP Protocol: March 2025 Specification`);
+
+        console.error(`\nLegacy HTTP+SSE endpoints:`);
+        console.error(`  - SSE stream: http://${ip}:${serverConfig.port}/sse`);
+        console.error(`  - Messages: http://${ip}:${serverConfig.port}/messages?sessionId=X`);
+        console.error(`  - MCP Protocol: 2024-11-05 Specification (backward compatibility)`);
+      });
+
+      console.error('\nHealth check endpoint:');
+      ipAddresses.forEach((ip) => {
+        console.error(`  - http://${ip}:${serverConfig.port}/health`);
+      });
+
+      console.error('\nCalendar API endpoint:');
+      ipAddresses.forEach((ip) => {
+        console.error(`  - http://${ip}:${serverConfig.port}/api/calendars`);
+      });
+
+      console.error('\nServer is running and ready to accept connections.');
+      console.error('='.repeat(80));
     });
-
-    console.error('\nHealth check endpoint:');
-    ipAddresses.forEach((ip) => {
-      console.error(`  - http://${ip}:${serverConfig.port}/health`);
-    });
-
-    console.error('\nCalendar API endpoint:');
-    ipAddresses.forEach((ip) => {
-      console.error(`  - http://${ip}:${serverConfig.port}/api/calendars`);
-    });
-
-    console.error('\nServer is running and ready to accept connections.');
-    console.error('='.repeat(80));
-  });
+  }
 
   // Export for testing
-  module.exports = { app: app, server, httpServer };
+  export { app, server, httpServer };
 }
