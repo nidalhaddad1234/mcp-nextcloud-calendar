@@ -12,6 +12,7 @@ process.env.NODE_DISABLE_COLORS = '1';
 import express from 'express';
 // Import the MCP server with now-proper type definitions
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { loadConfig, validateEnvironmentVariables } from './config/config.js';
 import { healthHandler } from './handlers/health.js';
 import { setupMcpTransport } from './handlers/mcp-transport.js';
@@ -40,6 +41,16 @@ export function handleCalendarToolError(operation: string, error: unknown) {
       },
     ],
   };
+}
+
+// Detect if we're running in stdio mode (launched by Claude Desktop)
+// vs HTTP mode (standalone server)
+const isStdioMode = !process.stdout.isTTY || process.argv.includes('--stdio');
+
+if (isStdioMode) {
+  console.error('Starting in stdio mode for MCP client connection...');
+} else {
+  console.error('Starting in HTTP server mode...');
 }
 
 // Validate environment variables
@@ -243,73 +254,100 @@ if (eventService) {
   registerEventTools(server, eventService);
 }
 
-// Setup Express app
-const app = express();
-app.use(express.json());
+// Choose transport based on how we're running
+if (isStdioMode) {
+  // Stdio mode for Claude Desktop
+  console.error('Connecting via stdio transport for MCP client...');
+  
+  const transport = new StdioServerTransport();
+  
+  // Handle graceful shutdown
+  process.on('SIGINT', async () => {
+    console.error('Received SIGINT, shutting down gracefully...');
+    await server.close();
+    process.exit(0);
+  });
 
-// Setup handlers
-const { mcpHandler, sseHandler, messageHandler } = setupMcpTransport(server);
+  process.on('SIGTERM', async () => {
+    console.error('Received SIGTERM, shutting down gracefully...');
+    await server.close();
+    process.exit(0);
+  });
 
-// Configure routes
-app.get('/health', healthHandler(serverConfig));
+  // Connect the server to the transport
+  server.connect(transport).then(() => {
+    console.error('MCP server connected via stdio transport');
+  }).catch((error) => {
+    console.error('Failed to connect MCP server:', error);
+    process.exit(1);
+  });
 
-// Modern Streamable HTTP endpoint
-app.all('/mcp', mcpHandler);
+} else {
+  // HTTP mode for standalone testing
+  console.error('Starting HTTP server for standalone mode...');
+  
+  // Setup Express app
+  const app = express();
+  app.use(express.json());
 
-// Legacy HTTP+SSE transport endpoints (for backward compatibility)
-app.get('/sse', sseHandler);
-app.post('/messages', messageHandler);
+  // Setup handlers
+  const { mcpHandler, sseHandler, messageHandler } = setupMcpTransport(server);
 
-// Calendar routes
-app.get('/api/calendars', getCalendarsHandler(calendarService));
+  // Configure routes
+  app.get('/health', healthHandler(serverConfig));
 
-// Graceful shutdown handling
-const gracefulShutdown = () => {
-  console.error('Shutting down gracefully...');
-  server
-    .close()
-    .then(() => {
-      console.error('Server closed');
-      process.exit(0);
-    })
-    .catch((err) => {
-      console.error('Error during shutdown:', err);
-      process.exit(1);
-    });
-};
+  // Modern Streamable HTTP endpoint
+  app.all('/mcp', mcpHandler);
 
-// Handle termination signals
-process.on('SIGTERM', gracefulShutdown);
-process.on('SIGINT', gracefulShutdown);
+  // Legacy HTTP+SSE transport endpoints (for backward compatibility)
+  app.get('/sse', sseHandler);
+  app.post('/messages', messageHandler);
 
-// Get server's IP address(es)
-function getServerIpAddresses(): string[] {
-  const nets = os.networkInterfaces();
-  const results: string[] = [];
+  // Calendar routes
+  app.get('/api/calendars', getCalendarsHandler(calendarService));
 
-  for (const name of Object.keys(nets)) {
-    // Type assertion needed since TypeScript doesn't know the structure
-    const interfaces = nets[name];
-    if (!interfaces) continue;
+  // Graceful shutdown handling
+  const gracefulShutdown = () => {
+    console.error('Shutting down gracefully...');
+    server
+      .close()
+      .then(() => {
+        console.error('Server closed');
+        process.exit(0);
+      })
+      .catch((err) => {
+        console.error('Error during shutdown:', err);
+        process.exit(1);
+      });
+  };
 
-    for (const net of interfaces) {
-      // Skip internal and non-IPv4 addresses
-      if (!net.internal && net.family === 'IPv4') {
-        results.push(net.address);
+  // Handle termination signals
+  process.on('SIGTERM', gracefulShutdown);
+  process.on('SIGINT', gracefulShutdown);
+
+  // Get server's IP address(es)
+  function getServerIpAddresses(): string[] {
+    const nets = os.networkInterfaces();
+    const results: string[] = [];
+
+    for (const name of Object.keys(nets)) {
+      // Type assertion needed since TypeScript doesn't know the structure
+      const interfaces = nets[name];
+      if (!interfaces) continue;
+
+      for (const net of interfaces) {
+        // Skip internal and non-IPv4 addresses
+        if (!net.internal && net.family === 'IPv4') {
+          results.push(net.address);
+        }
       }
     }
+
+    return results.length ? results : ['localhost'];
   }
 
-  return results.length ? results : ['localhost'];
-}
-
-// For testing environments, we'll optionally avoid starting the server
-let httpServer: ReturnType<typeof app.listen> | null = null;
-
-// Only start the server if we're not in a test environment or if the test explicitly wants a server
-if (process.env.NODE_ENV !== 'test') {
-  // Start the server
-  httpServer = app.listen(serverConfig.port, () => {
+  // Start the HTTP server
+  const httpServer = app.listen(serverConfig.port, () => {
     const ipAddresses = getServerIpAddresses();
     const serverName = serverConfig.serverName;
     const serverVersion = serverConfig.serverVersion;
@@ -349,7 +387,7 @@ if (process.env.NODE_ENV !== 'test') {
     console.error('\nServer is running and ready to accept connections.');
     console.error('='.repeat(80));
   });
-}
 
-// Export for testing
-export { app, server, httpServer };
+  // Export for testing
+  module.exports = { app: app, server, httpServer };
+}
