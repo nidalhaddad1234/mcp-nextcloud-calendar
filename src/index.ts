@@ -8,43 +8,11 @@ process.env.NO_COLOR = '1';
 process.env.FORCE_COLOR = '0';
 process.env.NODE_DISABLE_COLORS = '1';
 
-// ===== PROCESS ERROR HANDLING =====
-// Add comprehensive error handling to prevent unexpected process exits
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error);
-  console.error('Stack:', error.stack);
-  // Don't exit on uncaught exceptions in MCP context
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  // Don't exit on unhandled rejections in MCP context
-});
-
-process.on('warning', (warning) => {
-  console.error('Process Warning:', warning.name, warning.message);
-});
-
-// Handle process exit signals gracefully
-process.on('SIGTERM', () => {
-  console.error('SIGTERM received, shutting down gracefully');
-  process.exit(0);
-});
-
-process.on('SIGINT', () => {
-  console.error('SIGINT received, shutting down gracefully');
-  process.exit(0);
-});
-
-// Prevent the process from exiting on pipe errors (common with MCP)
-process.on('SIGPIPE', () => {
-  console.error('SIGPIPE received, ignoring');
-});
-
 // Import Express in a way compatible with both ESM and TypeScript
 import express from 'express';
 // Import the MCP server with now-proper type definitions
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { loadConfig, validateEnvironmentVariables } from './config/config.js';
 import { healthHandler } from './handlers/health.js';
 import { setupMcpTransport } from './handlers/mcp-transport.js';
@@ -75,12 +43,6 @@ export function handleCalendarToolError(operation: string, error: unknown) {
   };
 }
 
-// Add startup logging
-console.error('MCP Nextcloud Calendar Server starting...');
-console.error('Process ID:', process.pid);
-console.error('Node.js version:', process.version);
-console.error('Environment:', process.env.NODE_ENV || 'development');
-
 // Validate environment variables
 const validation = validateEnvironmentVariables();
 if (validation.missing.length > 0) {
@@ -101,13 +63,6 @@ if (!validation.isValid) {
 const config = loadConfig();
 const { server: serverConfig, nextcloud: nextcloudConfig } = config;
 
-console.error('Configuration loaded successfully');
-console.error('Server config:', { 
-  port: serverConfig.port, 
-  name: serverConfig.serverName,
-  version: serverConfig.serverVersion 
-});
-
 // Show a clear message about what features are available
 if (!validation.serverReady) {
   console.error('WARNING: Server is running with minimal configuration.');
@@ -125,7 +80,6 @@ let eventService: EventService | null = null;
 // Only try to initialize calendar service if all required environment variables are available
 if (validation.calendarReady) {
   try {
-    console.error('Initializing CalendarService...');
     calendarService = new CalendarService(nextcloudConfig);
     console.error('Calendar service initialized successfully');
   } catch (error) {
@@ -134,7 +88,6 @@ if (validation.calendarReady) {
 
   try {
     if (calendarService) {
-      console.error('Initializing EventService...');
       eventService = new EventService(nextcloudConfig);
       console.error('Event service initialized successfully');
     }
@@ -156,23 +109,13 @@ if (validation.calendarReady) {
 import { z } from 'zod';
 
 // Create MCP server
-console.error('Creating MCP server...');
 const server = new McpServer({
   name: serverConfig.serverName,
   version: serverConfig.serverVersion,
 });
 
-// Add error handler to MCP server
-server.onerror = (error) => {
-  console.error('MCP Server error:', error);
-};
-
-console.error('MCP server created successfully');
-
 // Register calendar tools if calendar service is available
 if (calendarService) {
-  console.error('Registering calendar tools...');
-  
   // List calendars tool
   server.tool('listCalendars', {}, async () => {
     try {
@@ -293,91 +236,109 @@ if (calendarService) {
       }
     },
   );
-  
-  console.error('Calendar tools registered successfully');
 }
 
 // Register event tools
 import { registerEventTools } from './handlers/event-tools.js';
 if (eventService) {
-  console.error('Registering event tools...');
   registerEventTools(server, eventService);
-  console.error('Event tools registered successfully');
 }
 
-// Setup Express app
-console.error('Setting up Express app...');
-const app = express();
-app.use(express.json());
+// Check if we're running via Claude Desktop (stdio mode) or standalone (HTTP mode)
+const isStdioMode = !process.stdout.isTTY || process.argv.includes('--stdio');
 
-// Setup handlers
-console.error('Setting up MCP transport...');
-const { mcpHandler, sseHandler, messageHandler } = setupMcpTransport(server);
+if (isStdioMode) {
+  // ===== STDIO MODE: For Claude Desktop =====
+  console.error('Starting MCP server in stdio mode for Claude Desktop...');
+  
+  // Create stdio transport
+  const transport = new StdioServerTransport();
+  
+  // Add error handling
+  process.on('uncaughtException', (error) => {
+    console.error('Uncaught exception in stdio mode:', error);
+    process.exit(1);
+  });
+  
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled rejection in stdio mode:', reason);
+    process.exit(1);
+  });
+  
+  // Connect to server and start stdio transport
+  server.connect(transport).catch((error) => {
+    console.error('Failed to connect stdio transport:', error);
+    process.exit(1);
+  });
+  
+  console.error('MCP server started in stdio mode - ready for Claude Desktop');
+  
+} else {
+  // ===== HTTP MODE: For standalone/web use =====
+  console.error('Starting MCP server in HTTP mode...');
+  
+  // Setup Express app
+  const app = express();
+  app.use(express.json());
 
-// Configure routes
-app.get('/health', healthHandler(serverConfig));
+  // Setup handlers
+  const { mcpHandler, sseHandler, messageHandler } = setupMcpTransport(server);
 
-// Modern Streamable HTTP endpoint
-app.all('/mcp', mcpHandler);
+  // Configure routes
+  app.get('/health', healthHandler(serverConfig));
 
-// Legacy HTTP+SSE transport endpoints (for backward compatibility)
-app.get('/sse', sseHandler);
-app.post('/messages', messageHandler);
+  // Modern Streamable HTTP endpoint
+  app.all('/mcp', mcpHandler);
 
-// Calendar routes
-app.get('/api/calendars', getCalendarsHandler(calendarService));
+  // Legacy HTTP+SSE transport endpoints (for backward compatibility)
+  app.get('/sse', sseHandler);
+  app.post('/messages', messageHandler);
 
-console.error('Routes configured successfully');
+  // Calendar routes
+  app.get('/api/calendars', getCalendarsHandler(calendarService));
 
-// Graceful shutdown handling
-const gracefulShutdown = () => {
-  console.error('Shutting down gracefully...');
-  server
-    .close()
-    .then(() => {
-      console.error('Server closed');
-      process.exit(0);
-    })
-    .catch((err) => {
-      console.error('Error during shutdown:', err);
-      process.exit(1);
-    });
-};
+  // Graceful shutdown handling
+  const gracefulShutdown = () => {
+    console.error('Shutting down gracefully...');
+    server
+      .close()
+      .then(() => {
+        console.error('Server closed');
+        process.exit(0);
+      })
+      .catch((err) => {
+        console.error('Error during shutdown:', err);
+        process.exit(1);
+      });
+  };
 
-// Handle termination signals
-process.on('SIGTERM', gracefulShutdown);
-process.on('SIGINT', gracefulShutdown);
+  // Handle termination signals
+  process.on('SIGTERM', gracefulShutdown);
+  process.on('SIGINT', gracefulShutdown);
 
-// Get server's IP address(es)
-function getServerIpAddresses(): string[] {
-  const nets = os.networkInterfaces();
-  const results: string[] = [];
+  // Get server's IP address(es)
+  function getServerIpAddresses(): string[] {
+    const nets = os.networkInterfaces();
+    const results: string[] = [];
 
-  for (const name of Object.keys(nets)) {
-    // Type assertion needed since TypeScript doesn't know the structure
-    const interfaces = nets[name];
-    if (!interfaces) continue;
+    for (const name of Object.keys(nets)) {
+      // Type assertion needed since TypeScript doesn't know the structure
+      const interfaces = nets[name];
+      if (!interfaces) continue;
 
-    for (const net of interfaces) {
-      // Skip internal and non-IPv4 addresses
-      if (!net.internal && net.family === 'IPv4') {
-        results.push(net.address);
+      for (const net of interfaces) {
+        // Skip internal and non-IPv4 addresses
+        if (!net.internal && net.family === 'IPv4') {
+          results.push(net.address);
+        }
       }
     }
+
+    return results.length ? results : ['localhost'];
   }
 
-  return results.length ? results : ['localhost'];
-}
-
-// For testing environments, we'll optionally avoid starting the server
-let httpServer: ReturnType<typeof app.listen> | null = null;
-
-// Only start the server if we're not in a test environment or if the test explicitly wants a server
-if (process.env.NODE_ENV !== 'test') {
-  console.error('Starting HTTP server...');
-  
-  // Start the server
-  httpServer = app.listen(serverConfig.port, () => {
+  // Start the HTTP server
+  const httpServer = app.listen(serverConfig.port, () => {
     const ipAddresses = getServerIpAddresses();
     const serverName = serverConfig.serverName;
     const serverVersion = serverConfig.serverVersion;
@@ -415,20 +376,9 @@ if (process.env.NODE_ENV !== 'test') {
     });
 
     console.error('\nServer is running and ready to accept connections.');
-    console.error('Process will remain alive to handle MCP connections...');
     console.error('='.repeat(80));
   });
 
-  // Add error handler to HTTP server
-  httpServer.on('error', (error) => {
-    console.error('HTTP Server error:', error);
-  });
-
-  console.error('HTTP server setup complete');
+  // Export for testing
+  module.exports = { app: app, server, httpServer };
 }
-
-// Keep the process alive for MCP connections
-console.error('Process setup complete, ready for MCP connections');
-
-// Export for testing
-export { app, server, httpServer };
