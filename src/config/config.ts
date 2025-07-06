@@ -15,7 +15,7 @@ const packageVersion = (() => {
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
     return packageJson.version || '0.1.0';
   } catch {
-    console.warn('Could not read package.json version, using default');
+    console.error('Could not read package.json version, using default');
     return '0.1.0';
   }
 })();
