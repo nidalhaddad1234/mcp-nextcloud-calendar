@@ -1,9 +1,9 @@
 /**
  * MCP-compliant logging utility
- * 
+ *
  * The Model Context Protocol (MCP) requires that stdout is reserved ONLY for JSON-RPC messages.
  * All logging and debug output MUST go to stderr to maintain protocol compliance.
- * 
+ *
  * This utility provides a consistent logging interface that ensures proper output stream usage.
  */
 
@@ -25,10 +25,13 @@ export function createMcpLogger(context?: string): Logger {
   const formatMessage = (level: LogLevel, message: string, ...args: unknown[]): string => {
     const timestamp = new Date().toISOString();
     const prefix = context ? `[${context}]` : '';
-    const formattedArgs = args.length > 0 ? ` ${args.map(arg => 
-      typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-    ).join(' ')}` : '';
-    
+    const formattedArgs =
+      args.length > 0
+        ? ` ${args
+            .map((arg) => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg)))
+            .join(' ')}`
+        : '';
+
     return `${timestamp} ${prefix} [${level}] ${message}${formattedArgs}`;
   };
 
@@ -69,7 +72,6 @@ export function mcpLog(message?: unknown, ...optionalParams: unknown[]): void {
 export function checkMcpCompliance(): void {
   if (process.env.NODE_ENV !== 'test') {
     // Override console.log to warn about stdout usage
-    const originalLog = console.log;
     console.log = (...args: unknown[]) => {
       console.error('WARNING: console.log() detected - this breaks MCP protocol compliance!');
       console.error('Use logger.info() or mcpLog() instead to redirect output to stderr');

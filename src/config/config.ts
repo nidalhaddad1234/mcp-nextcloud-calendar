@@ -3,12 +3,13 @@ import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-// Load environment variables from .env file
-config();
-
-// Get package.json version
+// Get package.json version and .env path
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// Load environment variables from .env file with explicit path
+const envPath = resolve(__dirname, '../../.env');
+config({ path: envPath });
 const packageJsonPath = resolve(__dirname, '../../package.json');
 const packageVersion = (() => {
   try {
@@ -32,6 +33,8 @@ export interface NextcloudConfig {
   baseUrl: string;
   username: string;
   appToken: string;
+  defaultTimezone?: string;
+  useLocalTimezone?: boolean;
 }
 
 const defaultConfig: ServerConfig = {
@@ -61,15 +64,15 @@ export function validateEnvironmentVariables(): {
   const nextcloudVars = ['NEXTCLOUD_BASE_URL', 'NEXTCLOUD_USERNAME', 'NEXTCLOUD_APP_TOKEN'];
 
   // Check for missing variables
-  [...serverVars, ...nextcloudVars].forEach(varName => {
+  [...serverVars, ...nextcloudVars].forEach((varName) => {
     if (!process.env[varName]) {
       missing.push(varName);
     }
   });
 
   // Check if any Nextcloud vars are missing
-  const missingNextcloud = nextcloudVars.filter(varName => !process.env[varName]);
-  const missingServer = serverVars.filter(varName => !process.env[varName]);
+  const missingNextcloud = nextcloudVars.filter((varName) => !process.env[varName]);
+  const missingServer = serverVars.filter((varName) => !process.env[varName]);
 
   // The server can function without Nextcloud config, but calendar service won't be available
   const calendarReady = missingNextcloud.length === 0;
@@ -78,13 +81,13 @@ export function validateEnvironmentVariables(): {
   const serverReady = missingServer.length < serverVars.length;
 
   // Only valid if at least one feature is available (either basic server or calendar)
-  const isValid = serverReady || (missing.length < (serverVars.length + nextcloudVars.length));
+  const isValid = serverReady || missing.length < serverVars.length + nextcloudVars.length;
 
   return {
     isValid,
     missing,
     serverReady,
-    calendarReady
+    calendarReady,
   };
 }
 
@@ -124,6 +127,8 @@ export function loadConfig(): { server: ServerConfig; nextcloud: NextcloudConfig
       baseUrl: formattedBaseUrl,
       username: nextcloudUsername,
       appToken: nextcloudAppToken,
+      defaultTimezone: process.env.DEFAULT_TIMEZONE || 'Europe/Paris',
+      useLocalTimezone: process.env.USE_LOCAL_TIMEZONE === 'true' || true,
     },
   };
 }

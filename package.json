@@ -41,7 +41,7 @@
     "url": "https://github.com/nidalhaddad1234"
   },
   "license": "MIT",
-  "description": "MCP-compliant server for Nextcloud Calendar integration with Claude Desktop and other AI assistants",
+  "description": "MCP-compliant server for Nextcloud Calendar integration with Claude Desktop",
   "homepage": "https://github.com/nidalhaddad1234/mcp-nextcloud-calendar#readme",
   "repository": {
     "type": "git",
@@ -65,15 +65,11 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.11.0",
-    "@types/express": "^5.0.1",
-    "@types/uuid": "^10.0.0",
     "axios": "^1.8.4",
     "dotenv": "^16.5.0",
-    "express": "^5.1.0",
     "fast-xml-parser": "^5.2.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3",
-    "uuid": "^11.1.0",
     "xml2js": "^0.6.2",
     "zod": "^3.24.2"
   },

@@ -76,18 +76,96 @@ export class CalendarHttpClient {
   }
 
   /**
-   * Make a PROPFIND request to get calendar properties
+   * Make a generic GET request
+   * @param url The URL to request
+   * @returns The response data
+   */
+  async get(url: string): Promise<string> {
+    try {
+      logger.debug(`Making GET request to ${url}`);
+
+      const response = await axios({
+        method: 'GET',
+        url,
+        headers: {
+          Authorization: this.authHeader,
+        },
+      });
+
+      return response.data;
+    } catch (error) {
+      logger.error(`GET request failed for ${url}:`, error);
+      throw this.handleHttpError(error, 'Failed to fetch resource');
+    }
+  }
+
+  /**
+   * Make a generic PUT request
+   * @param url The URL to request
+   * @param data The data to send
+   * @param headers Optional additional headers
+   * @returns The response data
+   */
+  async put(url: string, data: string, headers: Record<string, string> = {}): Promise<string> {
+    try {
+      logger.debug(`Making PUT request to ${url}`);
+
+      const response = await axios({
+        method: 'PUT',
+        url,
+        headers: {
+          Authorization: this.authHeader,
+          ...headers,
+        },
+        data,
+      });
+
+      return response.data;
+    } catch (error) {
+      logger.error(`PUT request failed for ${url}:`, error);
+      throw this.handleHttpError(error, 'Failed to update resource');
+    }
+  }
+
+  /**
+   * Make a generic DELETE request
+   * @param url The URL to request
+   * @returns The response data
+   */
+  async delete(url: string): Promise<string> {
+    try {
+      logger.debug(`Making DELETE request to ${url}`);
+
+      const response = await axios({
+        method: 'DELETE',
+        url,
+        headers: {
+          Authorization: this.authHeader,
+        },
+      });
+
+      return response.data;
+    } catch (error) {
+      logger.error(`DELETE request failed for ${url}:`, error);
+      throw this.handleHttpError(error, 'Failed to delete resource');
+    }
+  }
+
+  /**
+   * Make a PROPFIND request with a custom URL
    * @param data XML data for the request
+   * @param url Custom URL for the request
    * @param depth Depth of the request (0, 1, or infinity)
    * @returns The response data
    */
-  async propfind(data: string, depth: string = '1'): Promise<string> {
+  async propfind(data: string, url?: string, depth: string = '1'): Promise<string> {
     try {
-      logger.debug('Making PROPFIND request to Nextcloud CalDAV');
+      const requestUrl = url || this.caldavUrl;
+      logger.debug(`Making PROPFIND request to ${requestUrl}`);
 
       const response = await axios({
         method: 'PROPFIND',
-        url: this.caldavUrl,
+        url: requestUrl,
         headers: {
           Authorization: this.authHeader,
           Depth: depth,

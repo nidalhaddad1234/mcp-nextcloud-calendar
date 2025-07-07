@@ -1,12 +1,15 @@
 /**
- * Service for handling Nextcloud calendar events via CalDAV
+ * Service for handling Nextcloud calendar events via CalDAV - Enhanced Version
  */
 import { NextcloudConfig } from '../../config/config.js';
 import { Event } from '../../models/index.js';
 import { createLogger } from '../logger.js';
 import { XmlService, CalDavXmlBuilder } from '../xml/index.js';
+import { EnhancedXmlService } from '../xml/enhanced-xml-service.js';
+import { EnhancedICalParser } from './enhanced-ical-utils.js';
 import { CalendarHttpClient, CalDavError } from './http-client.js';
-import * as iCalUtils from './ical-utils.js';
+import { TimezoneService } from '../timezone-service.js';
+
 import crypto from 'crypto';
 
 export class EventService {
@@ -14,7 +17,9 @@ export class EventService {
   private httpClient: CalendarHttpClient;
   private logger = createLogger('EventService');
   private xmlService: XmlService;
+  private enhancedXmlService: EnhancedXmlService;
   private caldavXmlBuilder: CalDavXmlBuilder;
+  private timezoneService: TimezoneService;
 
   constructor(config: NextcloudConfig) {
     this.config = config;
@@ -29,15 +34,57 @@ export class EventService {
     // Initialize HTTP client
     this.httpClient = new CalendarHttpClient(baseUrl, this.config.username, this.config.appToken);
 
-    // Initialize XML service
+    // Initialize XML services
     this.xmlService = new XmlService();
+    this.enhancedXmlService = new EnhancedXmlService();
     this.caldavXmlBuilder = new CalDavXmlBuilder(this.xmlService);
+
+    // Initialize timezone service with user preferences
+    this.timezoneService = new TimezoneService(
+      this.config.defaultTimezone || 'Europe/Paris',
+      this.config.useLocalTimezone !== false,
+    );
 
     // Log initialization without sensitive details
     this.logger.info('EventService initialized successfully', {
       baseUrl: baseUrl,
       username: this.config.username,
+      timezone: this.timezoneService.getTimezoneInfo().timezone,
     });
+  }
+
+  /**
+   * Enhance an event with timezone-aware formatting
+   * @param event The event to enhance
+   * @returns Event with additional timezone-aware properties
+   * @private Internal utility method
+   */
+  private enhanceEventWithTimezone(event: Event): Event & {
+    localStart: Date;
+    localEnd: Date;
+    formattedDateRange: string;
+    readableStart: string;
+    readableEnd: string;
+  } {
+    const localStart = this.timezoneService.toLocal(event.start);
+    const localEnd = this.timezoneService.toLocal(event.end);
+
+    return {
+      ...event,
+      localStart,
+      localEnd,
+      formattedDateRange: this.timezoneService.formatDateRange(
+        localStart,
+        localEnd,
+        event.isAllDay,
+      ),
+      readableStart: event.isAllDay
+        ? this.timezoneService.formatAllDay(localStart)
+        : this.timezoneService.formatAsReadable(localStart),
+      readableEnd: event.isAllDay
+        ? this.timezoneService.formatAllDay(localEnd)
+        : this.timezoneService.formatAsReadable(localEnd),
+    };
   }
 
   /**
@@ -60,6 +107,28 @@ export class EventService {
       this.logger.error(`Invalid calendar ID format: ${calendarId}`);
       throw new Error(
         'Invalid calendar ID format: Only alphanumeric characters, dash, underscore, and period are allowed',
+      );
+    }
+  }
+
+  /**
+   * Validate an event ID
+   * @param eventId The event ID to validate
+   * @throws Error if the event ID is invalid
+   * @private Internal utility method
+   */
+  private validateEventId(eventId: string): void {
+    if (!eventId) {
+      throw new Error('Event ID is required');
+    }
+
+    // Event IDs should be safe for use in URLs
+    const safeIdRegex = /^[a-zA-Z0-9_.-]+$/;
+
+    if (!safeIdRegex.test(eventId)) {
+      this.logger.error(`Invalid event ID format: ${eventId}`);
+      throw new Error(
+        'Invalid event ID format: Only alphanumeric characters, dash, underscore, and period are allowed',
       );
     }
   }
@@ -95,35 +164,44 @@ export class EventService {
       // Build the REPORT request for calendar events
       const reportXml = this.caldavXmlBuilder.buildCalendarQueryReport(timeRange);
 
+      this.logger.debug('Sending CalDAV REPORT request', { calendarId, timeRange });
+
       // Send the REPORT request
       const reportResponse = await this.httpClient.calendarReport(calendarId, reportXml);
 
-      // Parse the XML response
-      const xmlData = await this.xmlService.parseXml(reportResponse);
+      this.logger.debug('Received CalDAV REPORT response, parsing...');
 
-      // Extract events from the response
+      // Parse the XML response using enhanced parser
+      const xmlData = await this.enhancedXmlService.parseCalDAVResponse(reportResponse);
+
+      // Extract events from the response using enhanced parser
       const events: Event[] = [];
-      const calDavResponses = this.caldavXmlBuilder.parseMultistatus(xmlData);
+      const responses = this.enhancedXmlService.extractMultistatusResponses(xmlData);
 
-      for (const response of calDavResponses) {
+      this.logger.debug(`Processing ${responses.length} CalDAV responses`);
+
+      for (const response of responses) {
         try {
           // Get the href (event URL)
           const href = response.href;
 
           if (!href) {
+            this.logger.debug('Skipping response with no href');
             continue;
           }
 
-          // Get calendar data from properties
-          const calendarData =
-            response.properties['c:calendar-data'] || response.properties['calendar-data'];
+          // Get calendar data from properties using enhanced extractor
+          const calendarData = this.enhancedXmlService.extractCalendarData(response.properties);
 
           if (!calendarData) {
+            this.logger.debug('Skipping response with no calendar data', { href });
             continue;
           }
 
-          // Parse the iCalendar data
-          const parsedEvents = iCalUtils.parseICalEvents(calendarData.toString(), calendarId);
+          this.logger.debug('Parsing iCalendar data for event', { href });
+
+          // Parse the iCalendar data using enhanced parser
+          const parsedEvents = EnhancedICalParser.parseICalEvents(calendarData, calendarId);
 
           // Add to our list of events
           events.push(...parsedEvents);
@@ -131,6 +209,8 @@ export class EventService {
           this.logger.warn('Error parsing event response:', parseError);
         }
       }
+
+      this.logger.info(`Successfully fetched ${events.length} events from calendar ${calendarId}`);
 
       // Handle recurring events expansion if requested
       let processedEvents = events;
@@ -151,12 +231,6 @@ export class EventService {
       }
 
       // Apply client-side filtering
-      // TODO: For better performance with large calendars, consider implementing server-side
-      // filtering where possible by modifying the REPORT request's XML. CalDAV supports
-      // filtering by property through comp-filter and prop-filter elements. This would be
-      // particularly important for date ranges, categories, and other standard properties.
-      // Currently, we fetch all events and filter client-side, which may not be efficient
-      // for calendars with many events.
       let filteredEvents = processedEvents;
 
       // Filter by ADHD category if specified
@@ -169,66 +243,34 @@ export class EventService {
       // Filter by minimum priority if specified
       if (options?.priorityMinimum !== undefined) {
         filteredEvents = filteredEvents.filter(
-          (event) =>
-            event.focusPriority !== undefined &&
-            event.focusPriority >= (options.priorityMinimum as number),
+          (event) => (event.focusPriority || 0) >= (options.priorityMinimum || 0),
         );
       }
 
       // Filter by tags if specified
       if (options?.tags && options.tags.length > 0) {
-        filteredEvents = filteredEvents.filter((event) => {
-          // Check if categories exist before using some()
-          if (!event.categories || !Array.isArray(event.categories)) {
-            return false;
-          }
-          // Now safely check if any of the requested tags match
-          // We've already verified that event.categories exists and is an array
-          return options.tags?.some((tag) => (event.categories as string[]).includes(tag));
-        });
+        filteredEvents = filteredEvents.filter((event) =>
+          options.tags!.some((tag) => event.categories?.includes(tag)),
+        );
       }
 
-      // Limit the number of results if specified
-      if (options?.limit && options.limit > 0 && filteredEvents.length > options.limit) {
+      // Apply limit if specified
+      if (options?.limit) {
         filteredEvents = filteredEvents.slice(0, options.limit);
       }
 
-      this.logger.info(`Retrieved ${filteredEvents.length} events from calendar ${calendarId}`);
+      this.logger.debug(`Returning ${filteredEvents.length} filtered events`);
       return filteredEvents;
     } catch (error) {
-      this.logger.error(`Error fetching events for calendar ${calendarId}:`, error);
+      this.logger.error(`Error fetching events from calendar ${calendarId}:`, error);
       throw new Error(`Failed to fetch events: ${(error as Error).message}`);
-    }
-  }
-
-  /**
-   * Validate an event ID
-   * @param eventId The event ID to validate
-   * @throws Error if the event ID is invalid
-   * @private Internal utility method
-   */
-  private validateEventId(eventId: string): void {
-    if (!eventId) {
-      throw new Error('Event ID is required');
-    }
-
-    // Event IDs should follow a specific format:
-    // - Only alphanumeric characters, hyphens, underscores, and periods
-    // - Cannot contain path traversal sequences
-    const safeIdRegex = /^[a-zA-Z0-9_.-]+$/;
-
-    if (!safeIdRegex.test(eventId)) {
-      this.logger.error(`Invalid event ID format: ${eventId}`);
-      throw new Error(
-        'Invalid event ID format: Only alphanumeric characters, dash, underscore, and period are allowed',
-      );
     }
   }
 
   /**
    * Get a specific event by ID
    * @param calendarId ID of the calendar containing the event
-   * @param eventId ID of the event to retrieve
+   * @param eventId ID of the event to fetch
    * @returns Promise<Event> The requested event
    */
   async getEventById(calendarId: string, eventId: string): Promise<Event> {
@@ -239,66 +281,30 @@ export class EventService {
       this.validateCalendarId(calendarId);
       this.validateEventId(eventId);
 
-      // First approach: Try direct GET request to the event URL
+      // Construct the event URL
       const eventUrl = `${this.httpClient.getCalDavUrl()}${calendarId}/${eventId}.ics`;
 
-      try {
-        // Attempt to fetch the event directly
-        const iCalData = await this.httpClient.getEvent(eventUrl);
+      // Fetch the event directly
+      const iCalData = await this.httpClient.getEvent(eventUrl);
 
-        // Parse the iCalendar data
-        const events = iCalUtils.parseICalEvents(iCalData, calendarId);
+      // Parse the iCalendar data using enhanced parser
+      const events = EnhancedICalParser.parseICalEvents(iCalData, calendarId);
 
-        if (events.length > 0) {
-          return events[0];
-        }
-      } catch (directFetchError) {
-        this.logger.warn(
-          `Direct fetch for event ${eventId} failed, trying REPORT approach`,
-          directFetchError,
-        );
-        // Continue to alternative approach if direct fetch fails
+      if (events.length === 0) {
+        throw new Error(`Event with ID ${eventId} not found in calendar ${calendarId}`);
       }
 
-      // Second approach: Use REPORT with UID filter
-      const reportXml = this.caldavXmlBuilder.buildEventByUidRequest(eventId);
-
-      // Send the REPORT request
-      const reportResponse = await this.httpClient.calendarReport(calendarId, reportXml);
-
-      // Parse the XML response
-      const xmlData = await this.xmlService.parseXml(reportResponse);
-
-      // Extract the event from the response
-      const calDavResponses = this.caldavXmlBuilder.parseMultistatus(xmlData);
-
-      for (const response of calDavResponses) {
-        try {
-          // Get calendar data from properties
-          const calendarData =
-            response.properties['c:calendar-data'] || response.properties['calendar-data'];
-
-          if (!calendarData) {
-            continue;
-          }
-
-          // Parse the iCalendar data
-          const events = iCalUtils.parseICalEvents(calendarData.toString(), calendarId);
-
-          // Find the event with the matching ID
-          const event = events.find((e) => e.id === eventId);
-
-          if (event) {
-            return event;
-          }
-        } catch (parseError) {
-          this.logger.warn('Error parsing event response:', parseError);
-        }
-      }
-
-      // If we get here, the event was not found
-      throw new Error(`Event with ID ${eventId} not found in calendar ${calendarId}`);
+      // Return the first (and should be only) event
+      const event = events[0];
+      this.logger.debug(`Successfully fetched event ${eventId} from calendar ${calendarId}`);
+      return event;
     } catch (error) {
+      if (
+        (error as Error).message.includes('not found') ||
+        (error as Error).message.includes('404')
+      ) {
+        throw new Error(`Event with ID ${eventId} not found in calendar ${calendarId}`);
+      }
       this.logger.error(`Error fetching event ${eventId} from calendar ${calendarId}:`, error);
       throw new Error(`Failed to fetch event: ${(error as Error).message}`);
     }
@@ -361,8 +367,8 @@ export class EventService {
         metadata: event.metadata,
       };
 
-      // Generate iCalendar data
-      const iCalData = iCalUtils.generateICalEvent(completeEvent);
+      // Generate iCalendar data using enhanced generator
+      const iCalData = EnhancedICalParser.generateICalEvent(completeEvent);
 
       // Create the event via PUT request
       const success = await this.httpClient.putEvent(calendarId, eventId, iCalData);
@@ -395,16 +401,8 @@ export class EventService {
       this.validateCalendarId(calendarId);
       this.validateEventId(eventId);
 
-      if (!updates || Object.keys(updates).length === 0) {
-        throw new Error('No updates provided');
-      }
-
-      // Fetch the existing event
+      // Fetch the current event to get existing data
       const currentEvent = await this.getEventById(calendarId, eventId);
-
-      if (!currentEvent) {
-        throw new Error(`Event ${eventId} not found in calendar ${calendarId}`);
-      }
 
       // Merge the updates with the current event
       const updatedEvent: Event = {
@@ -431,8 +429,8 @@ export class EventService {
         );
       }
 
-      // Generate iCalendar data
-      const iCalData = iCalUtils.generateICalEvent(updatedEvent);
+      // Generate iCalendar data using enhanced generator
+      const iCalData = EnhancedICalParser.generateICalEvent(updatedEvent);
 
       // Update the event via PUT request
       let success: boolean;
@@ -514,25 +512,24 @@ export class EventService {
       // Send the REPORT request
       const reportResponse = await this.httpClient.calendarReport(calendarId, expandXml);
 
-      // Parse the XML response
-      const xmlData = await this.xmlService.parseXml(reportResponse);
+      // Parse the XML response using enhanced parser
+      const xmlData = await this.enhancedXmlService.parseCalDAVResponse(reportResponse);
 
       // Extract expanded events from the response
       const expandedEvents: Event[] = [];
-      const calDavResponses = this.caldavXmlBuilder.parseMultistatus(xmlData);
+      const responses = this.enhancedXmlService.extractMultistatusResponses(xmlData);
 
-      for (const response of calDavResponses) {
+      for (const response of responses) {
         try {
-          // Get calendar data from properties
-          const calendarData =
-            response.properties['c:calendar-data'] || response.properties['calendar-data'];
+          // Get calendar data from properties using enhanced extractor
+          const calendarData = this.enhancedXmlService.extractCalendarData(response.properties);
 
           if (!calendarData) {
             continue;
           }
 
-          // Parse the iCalendar data to get expanded instances
-          const parsedEvents = iCalUtils.parseICalEvents(calendarData.toString(), calendarId);
+          // Parse the iCalendar data to get expanded instances using enhanced parser
+          const parsedEvents = EnhancedICalParser.parseICalEvents(calendarData, calendarId);
 
           // Add to our list of expanded events
           expandedEvents.push(...parsedEvents);
